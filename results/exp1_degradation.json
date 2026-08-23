@@ -1,0 +1,308 @@
+{
+  "budget_covers_queue": [
+    {
+      "by_source": {
+        "db": 2804,
+        "fallback_closed": 196
+      },
+      "driver_errors": 0,
+      "http_errors": 0,
+      "inject_db_delay_ms": 0,
+      "max_us": 60060,
+      "mean_us": 18618,
+      "min_us": 120,
+      "n": 3000,
+      "p50_us": 16306,
+      "p95_us": 50686,
+      "p99_us": 53365,
+      "requests_per_second": 3015.3,
+      "share_answered_from_the_datastore": 0.934667,
+      "share_that_fell_back": 0.065333
+    },
+    {
+      "by_source": {
+        "db": 2347,
+        "fallback_closed": 653
+      },
+      "driver_errors": 0,
+      "http_errors": 0,
+      "inject_db_delay_ms": 10,
+      "max_us": 53722,
+      "mean_us": 35265,
+      "min_us": 10202,
+      "n": 3000,
+      "p50_us": 37880,
+      "p95_us": 50507,
+      "p99_us": 51216,
+      "requests_per_second": 1752.1,
+      "share_answered_from_the_datastore": 0.782333,
+      "share_that_fell_back": 0.217667
+    },
+    {
+      "by_source": {
+        "db": 599,
+        "fallback_closed": 2401
+      },
+      "driver_errors": 0,
+      "http_errors": 0,
+      "inject_db_delay_ms": 25,
+      "max_us": 64794,
+      "mean_us": 46044,
+      "min_us": 25291,
+      "n": 3000,
+      "p50_us": 50231,
+      "p95_us": 52723,
+      "p99_us": 56855,
+      "requests_per_second": 1344.8,
+      "share_answered_from_the_datastore": 0.199667,
+      "share_that_fell_back": 0.800333
+    },
+    {
+      "by_source": {
+        "db": 558,
+        "fallback_closed": 2442
+      },
+      "driver_errors": 0,
+      "http_errors": 0,
+      "inject_db_delay_ms": 40,
+      "max_us": 60181,
+      "mean_us": 48959,
+      "min_us": 40300,
+      "n": 3000,
+      "p50_us": 50172,
+      "p95_us": 52065,
+      "p99_us": 54560,
+      "requests_per_second": 1271.3,
+      "share_answered_from_the_datastore": 0.186,
+      "share_that_fell_back": 0.814
+    },
+    {
+      "by_source": {
+        "fallback_closed": 3000
+      },
+      "driver_errors": 0,
+      "http_errors": 0,
+      "inject_db_delay_ms": 60,
+      "max_us": 65256,
+      "mean_us": 50936,
+      "min_us": 49019,
+      "n": 3000,
+      "p50_us": 50405,
+      "p95_us": 54367,
+      "p99_us": 58281,
+      "requests_per_second": 1209.2,
+      "share_answered_from_the_datastore": 0.0,
+      "share_that_fell_back": 1.0
+    },
+    {
+      "by_source": {
+        "fallback_closed": 3000
+      },
+      "driver_errors": 0,
+      "http_errors": 0,
+      "inject_db_delay_ms": 100,
+      "max_us": 77956,
+      "mean_us": 50967,
+      "min_us": 49018,
+      "n": 3000,
+      "p50_us": 50295,
+      "p95_us": 54227,
+      "p99_us": 63595,
+      "requests_per_second": 1209.2,
+      "share_answered_from_the_datastore": 0.0,
+      "share_that_fell_back": 1.0
+    },
+    {
+      "by_source": {
+        "fallback_closed": 3000
+      },
+      "driver_errors": 0,
+      "http_errors": 0,
+      "inject_db_delay_ms": 200,
+      "max_us": 69360,
+      "mean_us": 51034,
+      "min_us": 49013,
+      "n": 3000,
+      "p50_us": 50455,
+      "p95_us": 54412,
+      "p99_us": 59069,
+      "requests_per_second": 1203.7,
+      "share_answered_from_the_datastore": 0.0,
+      "share_that_fell_back": 1.0
+    }
+  ],
+  "concurrency": 64,
+  "injected_delays_ms": [
+    0,
+    10,
+    25,
+    40,
+    60,
+    100,
+    200
+  ],
+  "input_manifest_sha256": "e4e234793313ea2a28c600e19e99e4118556d4fcabeff7cbbd48db7579439ca4",
+  "noop_floor": {
+    "errors": 0,
+    "max_us": 33955,
+    "mean_us": 6691,
+    "min_us": 146,
+    "n": 3000,
+    "p50_us": 5573,
+    "p95_us": 16019,
+    "p99_us": 22435,
+    "requests_per_second": 9407.7
+  },
+  "pool_size": 16,
+  "prediction": {
+    "claim": "a configured timeout bounds the service's observed tail, so the p99 stays within the budget plus the harness floor",
+    "note": "scored for BOTH arrangements, and the headline is the ratio between them rather than either absolute verdict",
+    "verdict": "REFUTED",
+    "with_a_statement_timeout_alone": {
+      "bound_us": 72435,
+      "verdict": "REFUTED",
+      "within_bound": false,
+      "worst_p99_over_bound": 9.476,
+      "worst_p99_us": 686413
+    },
+    "with_budget_covering_the_queue": {
+      "bound_us": 72435,
+      "verdict": "held",
+      "within_bound": true,
+      "worst_p99_over_bound": 0.878,
+      "worst_p99_us": 63595
+    }
+  },
+  "requests_per_point": 3000,
+  "statement_timeout_only": [
+    {
+      "by_source": {
+        "db": 3000
+      },
+      "driver_errors": 0,
+      "http_errors": 0,
+      "inject_db_delay_ms": 0,
+      "max_us": 101781,
+      "mean_us": 13838,
+      "min_us": 115,
+      "n": 3000,
+      "p50_us": 10369,
+      "p95_us": 41724,
+      "p99_us": 60765,
+      "requests_per_second": 3747.0,
+      "share_answered_from_the_datastore": 1.0,
+      "share_that_fell_back": 0.0
+    },
+    {
+      "by_source": {
+        "db": 3000
+      },
+      "driver_errors": 0,
+      "http_errors": 0,
+      "inject_db_delay_ms": 10,
+      "max_us": 238606,
+      "mean_us": 42894,
+      "min_us": 10160,
+      "n": 3000,
+      "p50_us": 42626,
+      "p95_us": 105508,
+      "p99_us": 140239,
+      "requests_per_second": 1450.0,
+      "share_answered_from_the_datastore": 1.0,
+      "share_that_fell_back": 0.0
+    },
+    {
+      "by_source": {
+        "db": 3000
+      },
+      "driver_errors": 0,
+      "http_errors": 0,
+      "inject_db_delay_ms": 25,
+      "max_us": 505263,
+      "mean_us": 105458,
+      "min_us": 25261,
+      "n": 3000,
+      "p50_us": 105209,
+      "p95_us": 192941,
+      "p99_us": 276194,
+      "requests_per_second": 594.6,
+      "share_answered_from_the_datastore": 1.0,
+      "share_that_fell_back": 0.0
+    },
+    {
+      "by_source": {
+        "db": 2962,
+        "fallback_closed": 38
+      },
+      "driver_errors": 0,
+      "http_errors": 0,
+      "inject_db_delay_ms": 40,
+      "max_us": 816367,
+      "mean_us": 173899,
+      "min_us": 40272,
+      "n": 3000,
+      "p50_us": 166346,
+      "p95_us": 416688,
+      "p99_us": 548015,
+      "requests_per_second": 358.4,
+      "share_answered_from_the_datastore": 0.987333,
+      "share_that_fell_back": 0.012667
+    },
+    {
+      "by_source": {
+        "fallback_closed": 3000
+      },
+      "driver_errors": 0,
+      "http_errors": 0,
+      "inject_db_delay_ms": 60,
+      "max_us": 1017262,
+      "mean_us": 208231,
+      "min_us": 50205,
+      "n": 3000,
+      "p50_us": 207020,
+      "p95_us": 520262,
+      "p99_us": 686413,
+      "requests_per_second": 301.7,
+      "share_answered_from_the_datastore": 0.0,
+      "share_that_fell_back": 1.0
+    },
+    {
+      "by_source": {
+        "fallback_closed": 3000
+      },
+      "driver_errors": 0,
+      "http_errors": 0,
+      "inject_db_delay_ms": 100,
+      "max_us": 1025638,
+      "mean_us": 207584,
+      "min_us": 50221,
+      "n": 3000,
+      "p50_us": 206600,
+      "p95_us": 514443,
+      "p99_us": 679271,
+      "requests_per_second": 302.8,
+      "share_answered_from_the_datastore": 0.0,
+      "share_that_fell_back": 1.0
+    },
+    {
+      "by_source": {
+        "fallback_closed": 3000
+      },
+      "driver_errors": 0,
+      "http_errors": 0,
+      "inject_db_delay_ms": 200,
+      "max_us": 1332592,
+      "mean_us": 207187,
+      "min_us": 50232,
+      "n": 3000,
+      "p50_us": 206418,
+      "p95_us": 517038,
+      "p99_us": 677645,
+      "requests_per_second": 303.1,
+      "share_answered_from_the_datastore": 0.0,
+      "share_that_fell_back": 1.0
+    }
+  ],
+  "tail_ratio_naive_over_covered": 10.79,
+  "timeout_ms": 50
+}

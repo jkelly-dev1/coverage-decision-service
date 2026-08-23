@@ -1,0 +1,133 @@
+{
+  "burst": {
+    "concurrency": 64,
+    "copies": 20,
+    "events": 150,
+    "injected_db_delay_ms": 45,
+    "rows": [
+      {
+        "by_source": {
+          "db": 544,
+          "fallback_closed": 2456
+        },
+        "copies_per_event": 20,
+        "deliveries": 3000,
+        "distinct_events": 150,
+        "distinct_events_delivered": 150,
+        "duplicate_rows": 2850,
+        "events_with_disagreeing_decisions": 39,
+        "guard": "none",
+        "http_errors": 0,
+        "requests_per_second": 849.3,
+        "responses_marked_replayed": 0,
+        "rows_written": 3000,
+        "workload": "burst"
+      },
+      {
+        "by_source": {
+          "db": 162,
+          "fallback_closed": 1,
+          "replay": 2837
+        },
+        "copies_per_event": 20,
+        "deliveries": 3000,
+        "distinct_events": 150,
+        "distinct_events_delivered": 150,
+        "duplicate_rows": 13,
+        "events_with_disagreeing_decisions": 0,
+        "guard": "check_then_insert",
+        "http_errors": 0,
+        "requests_per_second": 2446.3,
+        "responses_marked_replayed": 2837,
+        "rows_written": 163,
+        "workload": "burst"
+      },
+      {
+        "by_source": {
+          "db": 40,
+          "fallback_closed": 110,
+          "replay": 2850
+        },
+        "copies_per_event": 20,
+        "deliveries": 3000,
+        "distinct_events": 150,
+        "distinct_events_delivered": 150,
+        "duplicate_rows": 0,
+        "events_with_disagreeing_decisions": 0,
+        "guard": "unique",
+        "http_errors": 0,
+        "requests_per_second": 842.4,
+        "responses_marked_replayed": 2850,
+        "rows_written": 150,
+        "workload": "burst"
+      }
+    ],
+    "timeout_ms": 50
+  },
+  "check_then_insert_fails_under_simultaneous_replay": true,
+  "check_then_insert_looks_correct_when_replays_are_spread": false,
+  "duplicates_removed_by_check_then_insert_under_burst": 0.995439,
+  "guards": [
+    "none",
+    "check_then_insert",
+    "unique"
+  ],
+  "input_manifest_sha256": "e4e234793313ea2a28c600e19e99e4118556d4fcabeff7cbbd48db7579439ca4",
+  "prediction": {
+    "claim": "check-then-insert makes the authorize endpoint idempotent",
+    "disagreeing_under_burst": 0,
+    "duplicates_under_burst": 13,
+    "duplicates_under_spread": 6,
+    "verdict": "REFUTED"
+  },
+  "spread": {
+    "concurrency": 32,
+    "requests": 8000,
+    "rows": [
+      {
+        "deliveries": 8000,
+        "distinct_events": 7575,
+        "distinct_events_delivered": 7575,
+        "duplicate_rows": 425,
+        "events_with_disagreeing_decisions": 0,
+        "guard": "none",
+        "http_errors": 0,
+        "replay_deliveries": 425,
+        "requests_per_second": 1922.7,
+        "responses_marked_replayed": 0,
+        "rows_written": 8000,
+        "workload": "spread"
+      },
+      {
+        "deliveries": 8000,
+        "distinct_events": 7575,
+        "distinct_events_delivered": 7575,
+        "duplicate_rows": 6,
+        "events_with_disagreeing_decisions": 0,
+        "guard": "check_then_insert",
+        "http_errors": 0,
+        "replay_deliveries": 425,
+        "requests_per_second": 1818.3,
+        "responses_marked_replayed": 419,
+        "rows_written": 7581,
+        "workload": "spread"
+      },
+      {
+        "deliveries": 8000,
+        "distinct_events": 7575,
+        "distinct_events_delivered": 7575,
+        "duplicate_rows": 0,
+        "events_with_disagreeing_decisions": 0,
+        "guard": "unique",
+        "http_errors": 0,
+        "replay_deliveries": 425,
+        "requests_per_second": 1883.5,
+        "responses_marked_replayed": 425,
+        "rows_written": 7575,
+        "workload": "spread"
+      }
+    ]
+  },
+  "unique_constraint_holds_under_simultaneous_replay": true,
+  "why_check_then_insert_duplicates_agree": "the racers slip through in the same instant and do identical work"
+}

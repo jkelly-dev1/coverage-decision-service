@@ -1,0 +1,282 @@
+{
+  "concurrency": 16,
+  "coverage_changes": 194,
+  "events_affected_by_a_change": 127,
+  "hit_rate_at_the_largest_free_ttl": 0.28675,
+  "hit_rate_saturates_at_ttl_ms": 30000,
+  "injected_db_delay_ms": 20,
+  "input_manifest_sha256": "e4e234793313ea2a28c600e19e99e4118556d4fcabeff7cbbd48db7579439ca4",
+  "kill_switch": [
+    {
+      "accuracy": 0.682083,
+      "decisions_changed_vs_normal": 3794,
+      "kill_switch_answer": false,
+      "max_us": 169,
+      "mean_us": 1,
+      "min_us": 0,
+      "n": 12000,
+      "p50_us": 1,
+      "p95_us": 3,
+      "p99_us": 8,
+      "requests_per_second": 7410.7,
+      "share_of_decisions_changed": 0.316167,
+      "wrongly_approved": 0,
+      "wrongly_denied": 3815
+    },
+    {
+      "accuracy": 0.317917,
+      "decisions_changed_vs_normal": 8206,
+      "kill_switch_answer": true,
+      "max_us": 193,
+      "mean_us": 1,
+      "min_us": 0,
+      "n": 12000,
+      "p50_us": 1,
+      "p95_us": 3,
+      "p99_us": 10,
+      "requests_per_second": 7009.4,
+      "share_of_decisions_changed": 0.683833,
+      "wrongly_approved": 8185,
+      "wrongly_denied": 0
+    }
+  ],
+  "largest_free_ttl_ms": 250,
+  "marginal_steps": [
+    {
+      "affected_error_added": 0.0,
+      "error_added_per_point_of_hit_rate": 0.0,
+      "from_ttl_ms": 0,
+      "hit_rate_gained": 0.28675,
+      "to_ttl_ms": 250
+    },
+    {
+      "affected_error_added": 0.03937,
+      "error_added_per_point_of_hit_rate": 0.1924,
+      "from_ttl_ms": 250,
+      "hit_rate_gained": 0.204667,
+      "to_ttl_ms": 1000
+    },
+    {
+      "affected_error_added": 0.275591,
+      "error_added_per_point_of_hit_rate": 1.3046,
+      "from_ttl_ms": 1000,
+      "hit_rate_gained": 0.21125,
+      "to_ttl_ms": 5000
+    },
+    {
+      "affected_error_added": 0.448819,
+      "error_added_per_point_of_hit_rate": 9.1441,
+      "from_ttl_ms": 5000,
+      "hit_rate_gained": 0.049083,
+      "to_ttl_ms": 30000
+    },
+    {
+      "affected_error_added": 0.0,
+      "error_added_per_point_of_hit_rate": null,
+      "from_ttl_ms": 30000,
+      "hit_rate_gained": 0.0,
+      "to_ttl_ms": 300000
+    }
+  ],
+  "no_cache_affected_error_rate": 0.015748,
+  "predictions": {
+    "longer_is_better_for_latency": {
+      "best_at_ttl_ms": 5000,
+      "claim": "median latency is monotonically non-increasing as the TTL grows, so latency never argues for a shorter TTL",
+      "p50_by_ttl_us": [
+        20902,
+        20520,
+        20239,
+        4,
+        4,
+        4
+      ],
+      "verdict": "held"
+    },
+    "no_ttl_buys_hit_rate_for_free": {
+      "claim": "every increase in hit rate is paid for with a proportional increase in wrong answers on decisions whose coverage had changed, so there is no free region",
+      "hit_rate_at_that_ttl": 0.28675,
+      "largest_free_ttl_ms": 250,
+      "verdict": "REFUTED",
+      "worst_affected_error_rate": 0.779528
+    }
+  },
+  "requests": 12000,
+  "timeout_ms": 500,
+  "ttl_sweep": [
+    {
+      "accuracy": 0.999833,
+      "affected_decisions": 127,
+      "affected_error_rate": 0.015748,
+      "affected_wrong": 2,
+      "affected_wrong_served_from_cache": 0,
+      "by_source": {
+        "db": 12000
+      },
+      "cache_hit_share": 0.0,
+      "cache_ttl_ms": 0,
+      "changes_applied": 130,
+      "counters": {
+        "db_hit": 12000
+      },
+      "fell_back": 0,
+      "max_us": 41799,
+      "mean_us": 21550,
+      "min_us": 20143,
+      "n": 12000,
+      "p50_us": 20902,
+      "p95_us": 25067,
+      "p99_us": 29177,
+      "wrongly_approved": 1,
+      "wrongly_denied": 1
+    },
+    {
+      "accuracy": 0.999833,
+      "affected_decisions": 127,
+      "affected_error_rate": 0.015748,
+      "affected_wrong": 2,
+      "affected_wrong_served_from_cache": 0,
+      "by_source": {
+        "cache": 3441,
+        "db": 8559
+      },
+      "cache_hit_share": 0.28675,
+      "cache_ttl_ms": 250,
+      "changes_applied": 130,
+      "counters": {
+        "cache_hit": 3441,
+        "db_hit": 8559
+      },
+      "fell_back": 0,
+      "max_us": 63704,
+      "mean_us": 15294,
+      "min_us": 1,
+      "n": 12000,
+      "p50_us": 20520,
+      "p95_us": 23837,
+      "p99_us": 27900,
+      "wrongly_approved": 1,
+      "wrongly_denied": 1
+    },
+    {
+      "accuracy": 0.999417,
+      "affected_decisions": 127,
+      "affected_error_rate": 0.055118,
+      "affected_wrong": 7,
+      "affected_wrong_served_from_cache": 6,
+      "by_source": {
+        "cache": 5897,
+        "db": 6103
+      },
+      "cache_hit_share": 0.491417,
+      "cache_ttl_ms": 1000,
+      "changes_applied": 130,
+      "counters": {
+        "cache_hit": 5897,
+        "db_hit": 6103
+      },
+      "fell_back": 0,
+      "max_us": 52393,
+      "mean_us": 10884,
+      "min_us": 1,
+      "n": 12000,
+      "p50_us": 20239,
+      "p95_us": 23164,
+      "p99_us": 26671,
+      "wrongly_approved": 1,
+      "wrongly_denied": 6
+    },
+    {
+      "accuracy": 0.9965,
+      "affected_decisions": 127,
+      "affected_error_rate": 0.330709,
+      "affected_wrong": 42,
+      "affected_wrong_served_from_cache": 42,
+      "by_source": {
+        "cache": 8432,
+        "db": 3568
+      },
+      "cache_hit_share": 0.702667,
+      "cache_ttl_ms": 5000,
+      "changes_applied": 130,
+      "counters": {
+        "cache_hit": 8432,
+        "db_hit": 3568
+      },
+      "fell_back": 0,
+      "max_us": 70111,
+      "mean_us": 6291,
+      "min_us": 1,
+      "n": 12000,
+      "p50_us": 4,
+      "p95_us": 21713,
+      "p99_us": 24100,
+      "wrongly_approved": 17,
+      "wrongly_denied": 25
+    },
+    {
+      "accuracy": 0.99175,
+      "affected_decisions": 127,
+      "affected_error_rate": 0.779528,
+      "affected_wrong": 99,
+      "affected_wrong_served_from_cache": 99,
+      "by_source": {
+        "cache": 9021,
+        "db": 2979
+      },
+      "cache_hit_share": 0.75175,
+      "cache_ttl_ms": 30000,
+      "changes_applied": 130,
+      "counters": {
+        "cache_hit": 9021,
+        "db_hit": 2979
+      },
+      "fell_back": 0,
+      "max_us": 34389,
+      "mean_us": 5268,
+      "min_us": 1,
+      "n": 12000,
+      "p50_us": 4,
+      "p95_us": 21664,
+      "p99_us": 24058,
+      "wrongly_approved": 36,
+      "wrongly_denied": 63
+    },
+    {
+      "accuracy": 0.99175,
+      "affected_decisions": 127,
+      "affected_error_rate": 0.779528,
+      "affected_wrong": 99,
+      "affected_wrong_served_from_cache": 99,
+      "by_source": {
+        "cache": 9021,
+        "db": 2979
+      },
+      "cache_hit_share": 0.75175,
+      "cache_ttl_ms": 300000,
+      "changes_applied": 130,
+      "counters": {
+        "cache_hit": 9021,
+        "db_hit": 2979
+      },
+      "fell_back": 0,
+      "max_us": 34035,
+      "mean_us": 5249,
+      "min_us": 1,
+      "n": 12000,
+      "p50_us": 4,
+      "p95_us": 21518,
+      "p99_us": 23668,
+      "wrongly_approved": 36,
+      "wrongly_denied": 63
+    }
+  ],
+  "ttls_ms": [
+    0,
+    250,
+    1000,
+    5000,
+    30000,
+    300000
+  ]
+}

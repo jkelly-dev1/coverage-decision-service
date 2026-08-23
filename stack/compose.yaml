@@ -1,0 +1,81 @@
+# Postgres 17 and the decision service. Two containers, no cloud account.
+#
+# The credentials below are local-only and deliberate. Postgres needs them to
+# start and the service needs the same pair to reach it. Every port is bound to
+# loopback. They are fixtures, not secrets.
+#
+# The ports are deliberately unusual. 5432 and 8080 are two of the most
+# commonly occupied ports on a developer machine, and a load driver that
+# silently connected to a DIFFERENT service would produce a latency
+# distribution for somebody else's software.
+#
+# The project name is explicit, and it has to be. Compose derives the project
+# name from the CONTAINING DIRECTORY when you do not set one, and this file
+# lives in a directory called stack/. Two unrelated projects that both keep
+# their compose file in stack/ therefore share one project namespace: bringing
+# this one up treats the other one's containers as orphans, and taking this one
+# down removes them, volumes and all.
+name: coverage-decision-service
+
+services:
+  postgres:
+    image: postgres:17.6-bookworm
+    container_name: cds-postgres
+    environment:
+      POSTGRES_USER: coverage-local
+      POSTGRES_PASSWORD: coverage-local-secret
+      POSTGRES_DB: coverage
+      POSTGRES_INITDB_ARGS: "--locale=C --encoding=UTF8"
+    command:
+      - postgres
+      - -c
+      - shared_buffers=256MB
+      # The connection limit is part of the experiment. A decision service that
+      # opens a connection per request hits this before it hits any latency
+      # budget, and experiment 1 is about what the degradation looks like when
+      # a dependency stops keeping up.
+      - -c
+      - max_connections=100
+      - -c
+      - track_io_timing=on
+    ports:
+      - "127.0.0.1:55434:5432"
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U coverage-local -d coverage"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  service:
+    build: ./service-image
+    image: cds-service:py313
+    container_name: cds-service
+    depends_on:
+      postgres:
+        condition: service_healthy
+    working_dir: /app
+    # THE SERVICE USES psycopg; the test suite uses nothing. Hand-rolling a
+    # Postgres client would put several hundred lines of unmeasured parsing
+    # code in the hot path of a latency experiment, and the experiment would
+    # then be measuring that parser. The standard client keeps this
+    # repository's own code out of the measurement.
+    #
+    # It is installed in the image and nowhere else. tests/ imports only the
+    # decision logic and the shipped results, so CI still installs pytest
+    # alone and never starts a container.
+    command: ["python", "-u", "-m", "service.app"]
+    environment:
+      CDS_PGHOST: postgres
+      CDS_PGPORT: "5432"
+      CDS_PGUSER: coverage-local
+      CDS_PGPASSWORD: coverage-local-secret
+      CDS_PGDATABASE: coverage
+    ports:
+      - "127.0.0.1:18080:8080"
+    volumes:
+      - ..:/app:ro
+
+volumes:
+  pg-data:

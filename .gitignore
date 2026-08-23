@@ -1,0 +1,25 @@
+# WHAT IS DELIBERATELY TRACKED, so that a later edit has to argue with a
+# sentence before it can drop it:
+#
+#   results/*.json   THE EVIDENCE. Every number in README.md is derived from
+#                    these by scripts/check_readme_numbers.py, and the test
+#                    suite asserts against them. A repository that ignored
+#                    them would pass every existence check and be useless.
+#   service/         the decision service, which is the subject
+#   scripts/, sql/   the experiments, the generator and the schema
+#   stack/           the compose file and the service image definition
+#
+# THERE IS NO data/ DIRECTORY TO IGNORE. The generated world is never written
+# to disk: scripts/load.py builds it in memory from the seed and streams it
+# into Postgres, and every results file carries the manifest sha256 of the
+# input it was measured on, so a reader who regenerates can prove they hold
+# the same world rather than take it on trust.
+#
+# Excluded below is only what a clone can rebuild.
+
+envs
+.venv
+__pycache__
+.pytest_cache
+*.pyc
+.DS_Store

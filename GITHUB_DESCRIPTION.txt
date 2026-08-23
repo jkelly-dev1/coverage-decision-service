@@ -1,0 +1,1 @@
+Real-time authorization decisions measured under injected failure: timeouts, caching, graceful degradation and a kill switch, measured rather than asserted. Whether a timeout bounds the tail, what fail-open versus fail-closed costs once both errors are priced, and whether webhook-driven decisioning is idempotent under replay.
