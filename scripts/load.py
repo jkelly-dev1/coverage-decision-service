@@ -10,10 +10,18 @@ ever be true. Loading them all up front would make the service answer every
 early event with a value that had not happened yet, and every staleness figure
 in experiment 3 would be measuring the loader.
 
-Refuses rather than loading something else. The manifest is recomputed here
-and compared against what the shipped results were measured on, so a generator
-that has been edited cannot quietly put a number in results/ that no clone can
-reproduce.
+It refuses to load something else. The manifest is recomputed here and
+compared against the `input_manifest_sha256` every shipped results file
+carries, before the schema is touched, so a generator that has been edited
+cannot quietly put a number in results/ that no clone can reproduce. If there
+are no results to compare against, as in a tree that has never been run, it
+says so and loads anyway, because "nothing to compare" is not "compared and
+equal" and the difference belongs in the output rather than in a reader's
+assumption.
+
+The same comparison runs offline, with no Docker and no Postgres, in
+tests/test_generator_and_scoring.py. This refusal protects the load; the test
+protects everybody who only runs the suite.
 """
 
 import os
@@ -32,6 +40,32 @@ def main():
     mem, mer, status, stream, distinct = gen.build()
     man = gen.manifest(mem, mer, status, stream, distinct)
     print("ok")
+
+    # ---- the refusal, before anything is written ---------------------------
+    shipped = lab.shipped_input_manifests()
+    if not shipped:
+        print("no shipped results to compare against; THE GENERATOR IS NOT "
+              "VERIFIED on this run")
+    else:
+        disagree = lab.manifest_disagreements(man["sha256"], shipped)
+        if disagree:
+            print(file=sys.stderr)
+            print("REFUSING TO LOAD. The generator produces", file=sys.stderr)
+            print("    %s" % man["sha256"], file=sys.stderr)
+            print("and these shipped results were measured on something else:",
+                  file=sys.stderr)
+            for name in disagree:
+                print("    results/%s.json  %s" % (name, shipped[name]),
+                      file=sys.stderr)
+            print(file=sys.stderr)
+            print("Loading this world would leave every number in README.md "
+                  "describing a world", file=sys.stderr)
+            print("no clone can rebuild. Revert the generator, or re-run all "
+                  "four experiments", file=sys.stderr)
+            print("and update the README from them.", file=sys.stderr)
+            return 1
+        print("manifest verified against %d shipped results file(s)"
+              % len(shipped))
 
     print("schema ...", end=" ", flush=True)
     lab.psql_file(SCHEMA)

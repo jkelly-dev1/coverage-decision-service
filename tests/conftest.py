@@ -6,12 +6,13 @@ them does not. Every test here exercises either a pure function or the
 committed results/*.json, so CI installs pytest and nothing else and never
 starts a container.
 
-Service/db.py is not imported anywhere in this suite, and that is deliberate
-rather than an oversight: it is the one module that needs psycopg, so
-importing it would put a third-party package in CI's way for no benefit. The
-decision logic it serves lives in service/decide.py, and decide() itself is
-exercised in tests/test_decide_path.py against a fake pool. The pieces alone
-were tested for a long time while the function that composes them was not.
+psycopg is not installed for this suite: service/db.py is the one module
+that needs it, and installing it would put a third-party package in CI's way
+for no benefit. The decision logic lives in service/decide.py, and decide()
+itself is exercised in tests/test_decide_path.py against a fake pool.
+tests/test_http_handler.py imports service/app.py, and through it
+service/db.py, with a stand-in psycopg that refuses to connect, so the
+handler is tested without a database.
 """
 
 import json

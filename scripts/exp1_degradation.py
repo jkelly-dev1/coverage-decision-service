@@ -54,6 +54,12 @@ CONCURRENCY = 64
 # the two arrangements produce identical numbers until requests have to wait
 # for a connection, so an experiment run below saturation would report that
 # the distinction does not matter.
+#
+# Checked against the running service before the sweep, by pool_size_complaint
+# below. A bare constant here is written into the results file, asserted by a
+# test and quoted by the README without any of them having asked the service
+# what pool it built; CDS_POOL_SIZE is what decides that, and only the service
+# knows it.
 POOL_SIZE = 16
 
 # Injected datastore delay, in milliseconds. Chosen to straddle the budget:
@@ -100,6 +106,35 @@ def sweep(events, budget_covers_queue):
     return rows
 
 
+def pool_size_complaint(reported, expected, concurrency):
+    """Why this run must not proceed, or None if it may.
+
+    Pure, because the refusal it feeds decides whether a published headline
+    is measured under the conditions the README describes, and a check that
+    could only be exercised by starting a container is a check nothing runs.
+
+    The failure it exists for. The service builds its pool from CDS_POOL_SIZE
+    (service/app.py). Raising that in stack/compose.yaml would move this
+    experiment below saturation, where the two arrangements are
+    indistinguishable, while the results file, the invariant test, README.md
+    and scripts/check_readme_numbers.py all went on saying 16, because none of
+    them looks at the pool. This does.
+    """
+    if reported is None:
+        return ("the service does not report a pool size, so this run cannot "
+                "show it was made above pool saturation")
+    if reported != expected:
+        return ("the service built a pool of %d and this experiment is "
+                "written for %d: the results file, the invariant test and "
+                "README.md all describe a pool of %d"
+                % (reported, expected, expected))
+    if reported >= concurrency:
+        return ("concurrency %d is not above a pool of %d, and below "
+                "saturation the two arrangements are indistinguishable"
+                % (concurrency, reported))
+    return None
+
+
 def verdict(rows, floor_p99_us):
     """Did the timeout bound the tail, at every delay?
 
@@ -129,6 +164,12 @@ def main():
     if not lab.service_ready(30):
         print("the service is not answering on 127.0.0.1:18080. Run:\n"
               "    cd stack && docker compose up -d", file=sys.stderr)
+        return 1
+
+    complaint = pool_size_complaint(lab.service_pool_size(), POOL_SIZE,
+                                    CONCURRENCY)
+    if complaint is not None:
+        print("refusing to run experiment 1: %s" % complaint, file=sys.stderr)
         return 1
 
     n = int(lab.scalar("SELECT count(*) FROM truth.arrival;"))
@@ -174,6 +215,8 @@ def main():
         "timeout_ms": TIMEOUT_MS,
         "requests_per_point": len(events),
         "concurrency": CONCURRENCY,
+        # Verified equal to the running service's pool by
+        # pool_size_complaint() before the sweep started; see above.
         "pool_size": POOL_SIZE,
         "injected_delays_ms": DELAYS_MS,
         "noop_floor": floor,

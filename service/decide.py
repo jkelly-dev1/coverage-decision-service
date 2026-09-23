@@ -166,6 +166,27 @@ def fallback_answer(fallback):
     raise ValueError("unknown fallback policy: %r" % (fallback,))
 
 
+def stats_payload(counters, cache_entries, pool_size):
+    """What GET /stats answers.
+
+    A function rather than a dict literal in the handler, because
+    service/app.py cannot be imported without psycopg and so nothing in the
+    offline suite can reach a handler. `pool_size` is the field experiment 1
+    refuses to run without, and a field no test can see is a field that can
+    quietly stop being reported.
+
+    `pool_size` is None before the pool is built. Reporting it as None rather
+    than omitting the key is what lets the caller tell "the service does not
+    answer this question" from "the service is not ready yet", and
+    scripts/exp1_degradation.py refuses on both.
+    """
+    return {
+        "counters": dict(counters),
+        "cache_entries": cache_entries,
+        "pool_size": pool_size,
+    }
+
+
 def decide(request, state):
     """One authorization decision. Returns the response body.
 

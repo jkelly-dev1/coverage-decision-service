@@ -66,7 +66,11 @@ def build():
 
     cov = {r["inject_db_delay_ms"]: r for r in e1["budget_covers_queue"]}
     nai = {r["inject_db_delay_ms"]: r for r in e1["statement_timeout_only"]}
-    for d in (0, 10, 25, 40, 60, 200):
+    # Every sweep point the results file holds, not a tuple written out by
+    # hand: a subset iterated by a deriver certifies the rows it renders and
+    # says nothing about the one it skips, and the 100 ms row carries the
+    # worst p99 the prose quotes.
+    for d in sorted(e1["injected_delays_ms"]):
         add("degradation row %d" % d, "| %d ms | %s us | %s us | %s us | %s us |"
             % (d, n(cov[d]["p50_us"]), n(cov[d]["p99_us"]),
                n(nai[d]["p50_us"]), n(nai[d]["p99_us"])))
@@ -99,7 +103,13 @@ def build():
     # records that. Deriving the sentence from the total certified a claim the
     # results file contradicts.
     applied = sorted({r["changes_applied"] for r in e3["ttl_sweep"]})
-    assert len(applied) == 1, "ttl sweep rows disagree on changes_applied"
+    if len(applied) != 1:
+        # Raised and not asserted: `python3 -O` deletes an assert statement
+        # and the message with it, and this one is the difference between
+        # certifying a sentence and certifying a sentence built from rows
+        # that disagree with each other.
+        raise ValueError("ttl sweep rows disagree on changes_applied: %s"
+                         % (applied,))
     add("coverage changes",
         "The world holds %d coverage changes and %d of\nthem fall inside the "
         "replayed window and are applied"
@@ -121,8 +131,17 @@ def build():
            n(sum(runs0["wrongly_denied"] + runs0["wrongly_approved"]
                  for runs0 in e2["runs"]
                  if runs0["inject_db_delay_ms"] == 0 and runs0["fallback"] == "open"))))
+    # The approvals a fail-closed fallback cannot have made. It can only
+    # deny, so every one of these came from the datastore, and the README
+    # paragraph that says so must carry the measured count rather than a
+    # remembered one.
+    ctrl_closed = [r for r in e2["runs"] if r["inject_db_delay_ms"] == 0
+                   and r["fallback"] == "closed"][0]
+    add("approvals the closed fallback cannot explain",
+        "the closed run records %s wrongly approved"
+        % n(ctrl_closed["wrongly_approved"]))
     runs = {(r["inject_db_delay_ms"], r["fallback"]): r for r in e2["runs"]}
-    for d in (0, 25, 60, 200):
+    for d in sorted(e2["injected_delays_ms"]):        # every row, not a subset
         for pol in ("closed", "open"):
             r = runs[(d, pol)]
             add("exp2 row %d %s" % (d, pol),
@@ -232,6 +251,18 @@ def build():
         % (n(none_b["events_with_disagreeing_decisions"]),
            n(none_b["distinct_events_delivered"])))
 
+    # ---- how many predictions were refuted ---------------------------------
+    # Derived, because it is the figure a reader is least likely to check and
+    # the one this repository's argument rests on: refuted predictions are
+    # kept, so the count of them is a claim about honesty.
+    verdicts = lab.scored_predictions(e1, e2, e3, e4)
+    refuted = [label for label, v in verdicts if v == "REFUTED"]
+    add("predictions refuted",
+        "%s of the %s predictions here were refuted and all %s are still in "
+        "the code"
+        % (lab.NUMBER_WORDS[len(refuted)].capitalize(),
+           lab.NUMBER_WORDS[len(verdicts)], lab.NUMBER_WORDS[len(refuted)]))
+
     return want
 
 
@@ -246,6 +277,16 @@ def n_or_f(v):
 def main():
     with open(README, encoding="utf-8") as fh:
         readme = fh.read()
+    try:
+        return _check(readme)
+    except lab.MissingResult as exc:
+        # A checker that cannot look must say so, not die with a traceback
+        # naming a line in lab.py.
+        print(str(exc), file=sys.stderr)
+        return 1
+
+
+def _check(readme):
     # Normalized on both sides so a reflowed paragraph is not a false alarm.
     # A checker that cries wolf on line wrapping is one a reader learns to
     # ignore, which is worse than not having one.

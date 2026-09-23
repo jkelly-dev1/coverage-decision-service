@@ -104,12 +104,21 @@ meaningful above it.
 | 25 ms | 50,231 us | 56,855 us | 105,209 us | 276,194 us |
 | 40 ms | 50,172 us | 54,560 us | 166,346 us | 548,015 us |
 | 60 ms | 50,405 us | 58,281 us | 207,020 us | 686,413 us |
+| 100 ms | 50,295 us | 63,595 us | 206,600 us | 679,271 us |
 | 200 ms | 50,455 us | 59,069 us | 206,418 us | 677,645 us |
 
 The worst p99 is 63,595 us when the budget covers the queue and 686,413 us when
 it does not: the same configured timeout, a tail 10.8 times longer. Every
-individual database call respected 50 ms in both runs. The difference is
-entirely in what the caller was made to wait for before the call started.
+individual database call respected 50 ms in both runs, and almost all of the
+difference is in what the caller was made to wait for before the call started.
+
+Almost all, and not all. The arrangement that covers the queue sets
+`statement_timeout` to whatever is LEFT of the budget, which differs per
+request, so it re-issues that SET, one round trip, on most requests under
+load; the naive arrangement passes the same constant every time and sets it
+once per connection. The extra round trip is inside the call, and it is paid
+by the arrangement these numbers favor, so the ratio above is if anything
+understated. `service/db.py` documents it at `_set_timeout`.
 
 The prediction was that a configured timeout bounds the tail, and it is refuted.
 Against a reference bound of the budget plus the measured floor (72,435 us), the
@@ -153,18 +162,31 @@ Experiment 2 replays 6,000 distinct events, 1,921 of them covered, under both po
 | 0 ms | open | 6.28% | 11 | 264 | 0.9542 |
 | 25 ms | closed | 80.32% | 1,549 | 0 | 0.7418 |
 | 25 ms | open | 80.18% | 3 | 3,280 | 0.4528 |
+| 40 ms | closed | 83.43% | 1,580 | 1 | 0.7365 |
+| 40 ms | open | 83.00% | 2 | 3,397 | 0.4335 |
 | 60 ms | closed | 100.00% | 1,921 | 0 | 0.6798 |
 | 60 ms | open | 100.00% | 0 | 4,079 | 0.3202 |
 | 200 ms | closed | 100.00% | 1,921 | 0 | 0.6798 |
 | 200 ms | open | 100.00% | 0 | 4,079 | 0.3202 |
 
 The 0 ms rows are the control. The fallback still fires on 416 and 377 of the
-6,000 requests (6.9% and 6.3%) and produces every error in those rows, so
-"barely consulted" is too strong; what is true is that the two runs' error
-TOTALS differ by only 123 -- 152 against 275. That is a difference of totals, not
-a count of decisions that differ: the two runs fell back on different requests,
-so the number of decisions that actually disagree is at least 123 and at most
-427, and this run does not record it.
+6,000 requests (6.9% and 6.3%) and produces most of the errors in those rows,
+so "barely consulted" is too strong.
+
+It does not produce all of them, and the row says so: a fail-closed fallback
+can only DENY, yet the closed run records 3 wrongly approved. Those three came
+from the datastore. The answer key records what was true at each event's own
+timestamp, and experiments 1 and 2 hold coverage at its time-zero state rather
+than applying the 194 changes as they fall due; experiment 3 is the one that
+applies them. A handful of the first 6,000 events have a key the database
+no longer matches, and the fallback is not the only thing in these rows that
+can be wrong.
+
+What is true of the pair is that the two runs' error TOTALS differ by only 123
+-- 152 against 275. That is a difference of totals, not a count of decisions
+that differ: the two runs fell back on different requests, so the number of
+decisions that actually disagree is at least 123 and at most 427, and this run
+does not record it.
 
 ### Where the answer flips
 
@@ -356,6 +378,15 @@ python3 scripts/exp4_idempotency.py
 About fifteen minutes end to end, most of it in the deliberately slowed sweep
 points. `SAMPLE_RUN.md` is the captured output of exactly that sequence.
 
+Two of those steps refuse rather than measure something else. `load.py`
+recomputes the generator's manifest and compares it against the
+`input_manifest_sha256` every shipped results file carries, before it touches
+the schema, so an edited generator cannot put a number in `results/` that no
+clone can rebuild. `exp1_degradation.py` asks the running service what
+connection pool it actually built (`CDS_POOL_SIZE` sets it, and the results
+file cannot know it) and stops if it is not the pool this document
+describes, or is not below the concurrency the comparison needs.
+
 The test suite needs neither Docker nor Postgres:
 
 ```
@@ -384,7 +415,8 @@ The load-bearing rows are mutation-checked and say so.
 | An expiry is counted apart from a cold miss | `tests/test_decide.py::test_an_expiry_is_counted_apart_from_a_cold_miss` |
 | Two plans at the same merchant are different cache entries | `tests/test_decide.py::test_two_plans_at_the_same_merchant_are_different_cache_entries` |
 | The generated world is a pure function of the seed | `tests/test_generator_and_scoring.py::test_the_world_is_a_pure_function_of_the_seed` |
-| Nothing in the generator reads the clock | `tests/test_generator_and_scoring.py::test_nothing_in_the_generator_reads_the_clock` |
+| Nothing in the generator reads the clock (an allowlist over its imports, not a list of forbidden strings) | `tests/test_generator_and_scoring.py::test_nothing_in_the_generator_reads_the_clock` |
+| The generator still builds the world the shipped results were measured on | `tests/test_generator_and_scoring.py::test_the_generator_still_builds_the_world_the_results_were_measured_on` |
 | A replay carries its original's id and its original's timestamp | `tests/test_generator_and_scoring.py::test_a_replay_carries_its_original_id_and_its_original_timestamp` |
 | Arrival timestamps are monotonic (mutation-checked: scatter them and experiment 3 scores correct decisions as wrong) | `tests/test_generator_and_scoring.py::test_arrival_timestamps_are_monotonic_for_first_deliveries` |
 | A merchant that is not a provider has no coverage row at all | `tests/test_generator_and_scoring.py::test_a_merchant_that_is_not_a_provider_has_no_coverage_row_at_all` |
@@ -393,6 +425,13 @@ The load-bearing rows are mutation-checked and say so.
 | Coverage at an instant uses the latest row at or before it | `tests/test_generator_and_scoring.py::test_coverage_at_an_instant_uses_the_latest_row_at_or_before_it` |
 | The two error kinds are counted apart (mutation-checked: swap them and the crossover inverts) | `tests/test_generator_and_scoring.py::test_the_two_error_kinds_are_counted_apart` |
 | `decide()` itself is exercised end to end against a fake pool: the kill switch answers without touching the datastore, a timeout and an error are counted apart, the cache expires, two plans do not share a cached answer, and a replayed webhook returns its ORIGINAL decision | `tests/test_decide_path.py` (mutation-checked: no-op the kill switch, raise the cache TTL to forever, drop the plan from the cache key, or disable either replay guard -- each fails) |
+| A denial is cached like any other answer (mutation-checked: cache only approvals and every verdict stays right while the hit rate collapses) | `tests/test_decide_path.py::test_a_denial_is_cached_like_any_other_answer` |
+| The cache key is the plan and the merchant and nothing else (mutation-checked: add the member and the hit rate collapses with no verdict changing) | `tests/test_decide_path.py::test_the_cache_key_is_the_plan_and_the_merchant_and_nothing_else` |
+| A TTL of zero writes nothing, rather than writing entries nothing reads | `tests/test_decide_path.py::test_a_ttl_of_zero_writes_nothing_rather_than_writing_and_not_reading` |
+| The kill switch does not so much as consult the cache (mutation-checked on the cache's own counters, which a request count cannot see) | `tests/test_decide_path.py::test_the_kill_switch_does_not_so_much_as_consult_the_cache` |
+| An unknown plan is answered "not covered" from the datastore, indistinguishably from an examined negative | `tests/test_decide_path.py::test_an_unknown_plan_is_answered_not_covered_and_labelled_a_datastore_answer` |
+| The source vocabulary has no value meaning "nothing here to examine" | `tests/test_decide_path.py::test_the_source_vocabulary_has_no_value_for_nothing_to_examine` |
+| The plan is taken from the request and never from the member | `tests/test_decide_path.py::test_the_plan_is_taken_from_the_request_and_never_from_the_member` |
 | A driver-side failure is not scored as a wrong decision | `tests/test_generator_and_scoring.py::test_a_failed_request_is_not_scored_as_a_wrong_decision` |
 | A percentile is a value that actually occurred | `tests/test_generator_and_scoring.py::test_the_percentile_is_a_value_that_actually_occurred` |
 | The no-op floor is far cheaper than a real decision (mutation-checked: re-enable Nagle and the floor becomes 42 ms) | `tests/test_results_invariants.py::test_the_noop_floor_is_far_cheaper_than_a_real_decision` |
@@ -402,7 +441,9 @@ The load-bearing rows are mutation-checked and say so.
 | The experiment ran above pool saturation | `tests/test_results_invariants.py::test_the_experiment_ran_above_pool_saturation` |
 | Shedding load sustains more throughput than queueing it | `tests/test_results_invariants.py::test_shedding_load_sustains_more_throughput_than_queueing_it` |
 | No driver-side errors are hidden in the latency figures | `tests/test_results_invariants.py::test_no_driver_side_errors_are_hidden_in_the_latency_figures` |
-| The two policies agree when nothing falls back | `tests/test_results_invariants.py::test_the_two_policies_agree_when_nothing_falls_back` |
+| The two policies' error totals are close when almost nothing falls back | `tests/test_results_invariants.py::test_the_two_policies_error_totals_are_close_when_almost_nothing_falls_back` |
+| A fail-closed run records approvals its own fallback cannot have made | `tests/test_results_invariants.py::test_a_fail_closed_run_records_approvals_its_fallback_cannot_explain` |
+| Every scored prediction is enumerated and carries a verdict | `tests/test_results_invariants.py::test_every_scored_prediction_is_enumerated_with_its_verdict` |
 | Fail-closed never bills anybody and fail-open never turns anybody away | `tests/test_results_invariants.py::test_fail_closed_never_bills_anybody_and_fail_open_never_turns_anybody_away` |
 | The measured crossover matches the analytic one | `tests/test_results_invariants.py::test_the_measured_crossover_matches_the_analytic_one` |
 | The crossover is a function of the base rate alone | `tests/test_results_invariants.py::test_the_crossover_is_a_function_of_the_base_rate_alone` |
@@ -422,6 +463,17 @@ The load-bearing rows are mutation-checked and say so.
 | The burst actually mixed real answers with fallbacks | `tests/test_results_invariants.py::test_the_burst_actually_mixed_real_answers_with_fallbacks` |
 | Every delivery got an answer under every guard | `tests/test_results_invariants.py::test_every_delivery_got_an_answer_under_every_guard` |
 | All four experiments measured the same generated world | `tests/test_results_invariants.py::test_all_four_experiments_measured_the_same_generated_world` |
+| Experiment 1 refuses to run unless the service's real pool is the one described here and is below the concurrency | `tests/test_harness_refusals.py::test_a_pool_raised_by_the_environment_stops_the_run` |
+| A service that will not report its pool size stops the run rather than passing it | `tests/test_harness_refusals.py::test_a_service_that_will_not_say_stops_the_run_too` |
+| Experiment 1 actually invokes that check | `tests/test_harness_refusals.py::test_experiment_1_actually_asks_the_service_what_pool_it_built` |
+| The loader compares the manifest against the shipped results before it writes anything | `tests/test_harness_refusals.py::test_the_loader_compares_the_manifest_BEFORE_it_writes_anything` |
+| An absent results file is a sentence and not a traceback | `tests/test_harness_refusals.py::test_an_absent_results_file_is_a_sentence_and_not_a_traceback` |
+| The figure checker reports a missing results file instead of dying inside a helper | `tests/test_harness_refusals.py::test_the_checker_reports_a_missing_results_file_instead_of_dying` |
+| A sub-query ending in a SQL comment still closes its JSON wrapper | `tests/test_harness_refusals.py::test_a_subquery_ending_in_a_comment_still_closes_its_wrapper` |
+| `GET /stats` reports the pool the process actually built | `tests/test_decide.py::test_stats_reports_the_pool_the_process_actually_built` |
+| A pool that is not built yet is reported as null rather than by omitting the field | `tests/test_decide.py::test_stats_reports_a_pool_that_is_not_built_yet_as_None_rather_than_omitting_it` |
+| The HTTP handler routes and answers over a real socket, with the database stubbed out: health, config, stats, 404 and authorize | `tests/test_http_handler.py::test_healthz_answers_without_touching_anything`, `::test_get_config_returns_the_live_configuration`, `::test_stats_reports_the_pool_the_process_built`, `::test_an_unknown_path_is_a_404`, `::test_authorize_hands_the_request_body_to_decide` (mutation-checked: make `do_GET` return nothing, or `/authorize` skip `decide`, and they fail) |
+| A fault inside the handler is a 500 with its type, counted apart from a timeout | `tests/test_http_handler.py::test_a_fault_in_the_handler_is_a_500_and_is_counted` (mutation-checked: stop counting it and it fails) |
 
 ## What this does not measure
 
@@ -440,6 +492,15 @@ The load-bearing rows are mutation-checked and say so.
 - **The service is not hardened.** `POST /config` lets any caller change the
   budget, the fallback policy and the kill switch at runtime. That is what makes
   the sweeps possible. A real decision service must not do it.
+- **It trusts the plan in the request.** `plan_id` arrives in the body and
+  is never checked against the member it is claimed for, so a caller may ask
+  about any plan for any member. An unknown plan, an unknown merchant and a
+  known pair that is simply not covered all produce the same answer,
+  `approved: false` with `source: "db"`, because the coverage lookup returns NULL
+  for all three and there is no source value meaning "nothing here to examine".
+  That is fine for generated traffic drawing from three plan ids and it is not
+  what a real one would do. It is pinned in `tests/test_decide_path.py` as a
+  stated decision.
 - **Not a healthcare or payments claim.** The setting is chosen because it makes
   the cost asymmetry concrete. This repository is not evidence of domain
   experience in either.
@@ -459,8 +520,8 @@ Postgres plus the service.
 
 Both follow the same rules: no claim without a test, mutation checks on the
 tests that matter, every number re-derived from the shipped results by script,
-and predictions recorded before the run so the refuted ones survive. Four of
-the six predictions here were refuted and all four are still in the code.
+and predictions recorded before the run so the refuted ones survive. Three of
+the six predictions here were refuted and all three are still in the code.
 
 ## License
 

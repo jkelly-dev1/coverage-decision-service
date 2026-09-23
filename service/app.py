@@ -30,7 +30,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from service import db as dbmod
-from service.decide import Config, Cache, decide
+from service.decide import Config, Cache, decide, stats_payload
 
 
 def _env():
@@ -103,9 +103,16 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == "/config":
             self._send(200, STATE.config.as_dict())
         elif self.path == "/stats":
+            # The pool this process actually built is in here, the only place
+            # it is exposed. CDS_POOL_SIZE decides it at startup and it is not
+            # a /config field. Raising it would move experiment 1 below pool
+            # saturation, where the two arrangements it compares are
+            # indistinguishable, so scripts/exp1_degradation.py reads this and
+            # refuses a pool other than the one it expects.
             with STATE.lock:
-                self._send(200, {"counters": dict(STATE.counters),
-                                 "cache_entries": STATE.cache.size()})
+                self._send(200, stats_payload(
+                    STATE.counters, STATE.cache.size(),
+                    STATE.pool.size if STATE.pool else None))
         else:
             self._send(404, {"error": "not found"})
 
@@ -125,7 +132,7 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self._send(404, {"error": "not found"})
         except Exception as exc:                      # noqa: BLE001
-            # A HANDLER THAT DIES SILENTLY LOOKS LIKE A TIMEOUT to the load
+            # A handler that dies silently looks like a timeout to the load
             # driver, and a timeout is exactly what experiment 1 is measuring.
             # The two must never be confused, so a fault here is reported as a
             # 500 with its type and counted separately.
@@ -137,7 +144,7 @@ class Server(ThreadingHTTPServer):
     # The default listen backlog is five. A load driver opens all of its
     # connections at once, so with 64 workers most of the SYNs arrive while
     # the accept queue is full, the kernel drops them, and the client's stack
-    # retries after one second and then two. That put 1.4-second outliers in
+    # retries after one second and then two. That puts 1.4-second outliers in
     # the no-op floor, a request that touches nothing, waiting on TCP
     # retransmission backoff, and nothing about it is a property of the
     # service being measured.

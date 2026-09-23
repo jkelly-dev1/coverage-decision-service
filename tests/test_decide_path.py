@@ -47,11 +47,16 @@ class FakePool:
         self.covered = covered
         self.raises = raises
         self.calls = 0
+        # Every (plan_id, merchant_id) the datastore was asked about, in
+        # order. The answer alone cannot show WHICH pair was looked up, and
+        # two of the tests below are about exactly that.
+        self.asked = []
         self.rows = {}          # (run_id, guard, event_id) -> standing answer
         self.inserts = 0
 
     def coverage(self, plan_id, merchant_id, **kw):
         self.calls += 1
+        self.asked.append((plan_id, merchant_id))
         if self.raises is not None:
             raise self.raises
         if callable(self.covered):
@@ -188,6 +193,147 @@ def test_two_plans_at_the_same_merchant_do_not_share_a_cached_answer():
     assert decide(_req(plan="GOLD"), st)["approved"] is True
     out = decide(_req("e2", plan="BRONZE"), st)
     assert out["approved"] is False, "BRONZE was served GOLD's cached answer"
+
+
+# ------------------------------------------------ what the cache WRITES
+#
+# The read side is covered above (expiry, the TTL of zero, two plans not
+# sharing an answer), and the denial-caching claim in README.md is checked
+# against `Cache.get` in tests/test_decide.py. None of that reaches the `put`
+# in `decide`, and the write side is where the edits that keep every verdict
+# right while collapsing experiment 3's hit rate live. The repository's
+# documented workflow is "re-run, then update the README from it", so a
+# collapsed hit rate would be published as a new measurement rather than
+# noticed as a regression.
+
+def test_a_denial_is_cached_like_any_other_answer():
+    """(mutation-checked: `if approved: state.cache.put(...)` in
+    service/decide.py leaves every verdict in this suite unchanged, because
+    caching only changes WHERE an answer comes from. What it changes is
+    experiment 3: about 68 percent of this traffic is denied, so denials not
+    being cached takes most of the hit rate with it.)
+    """
+    pool = FakePool(covered=False)
+    st = FakeState(pool, cache_ttl_ms=60000)
+    first = decide(_req(), st)
+    second = decide(_req("e2"), st)
+    assert first["approved"] is False and first["source"] == SRC_DB
+    assert second["approved"] is False, "a cached denial came back as approved"
+    assert second["source"] == SRC_CACHE, "the denial was not cached"
+    assert pool.calls == 1
+
+
+def test_the_cache_key_is_the_plan_and_the_merchant_and_nothing_else():
+    """(mutation-checked: add member_id to the key in service/decide.py and
+    every verdict stays right while the hit rate collapses to whatever share
+    of traffic is one member hitting one merchant twice.)
+
+    The complement of `test_two_plans_at_the_same_merchant_do_not_share_a
+    _cached_answer`, which pins what the key MUST separate. This pins what it
+    must NOT: coverage is a property of a plan at a merchant, so two members
+    on the same plan have to share the entry.
+    """
+    pool = FakePool(covered=True)
+    st = FakeState(pool, cache_ttl_ms=60000)
+    decide(_req("e1", member=1), st)
+    out = decide(_req("e2", member=2), st)
+    assert out["source"] == SRC_CACHE, "the member is in the cache key"
+    assert pool.calls == 1
+    # Different merchant, same plan and member: that IS a different entry.
+    out = decide(_req("e3", member=1, merchant=99), st)
+    assert out["source"] == SRC_DB
+    assert pool.asked == [("GOLD", 1), ("GOLD", 99)]
+
+
+def test_a_ttl_of_zero_writes_nothing_rather_than_writing_and_not_reading():
+    """(mutation-checked: drop the `if cfg.cache_ttl_ms > 0` guard around the
+    put and every other assertion in this suite still passes, because
+    `Cache.get` returns None at a TTL of zero, so nothing is ever served from it. The entries
+    accumulate unread for the life of the process, which is a leak rather than
+    a wrong answer, and no verdict anywhere can see it.)
+    """
+    pool = FakePool(covered=True)
+    st = FakeState(pool, cache_ttl_ms=0)
+    for i in range(5):
+        decide(_req("e%d" % i), st)
+    assert pool.calls == 5
+    assert st.cache.size() == 0, "the cache was written at a TTL of zero"
+
+
+def test_the_kill_switch_does_not_so_much_as_consult_the_cache():
+    """(mutation-checked: move the cache lookup above the kill-switch branch
+    and this fails, where an assertion on `pool.calls` alone does not: a cache
+    hit answers without the pool, so the request count is 1 either way and
+    only the cache's own counters move.)
+
+    A kill switch that consulted the cache would still be answering from a
+    datastore, at one remove and with a staleness nobody chose.
+    """
+    pool = FakePool(covered=True)
+    st = FakeState(pool, cache_ttl_ms=60000)
+    decide(_req(), st)                       # one miss, then a put
+    assert (st.cache.hits, st.cache.misses) == (0, 1)
+    st.config.update({"kill_switch": True, "kill_switch_answer": False})
+    out = decide(_req("e2"), st)
+    assert out["source"] == SRC_KILL_SWITCH
+    assert (st.cache.hits, st.cache.misses) == (0, 1), \
+        "the kill switch read the cache on its way to answering"
+
+
+# ------------------------------------- what the service does NOT know
+#
+# Pinned so that it stays a stated decision. service/db.py's `coverage`
+# docstring and README.md's "What this does not measure" both describe this
+# behavior; without a test, the description is the only thing holding it.
+
+def test_an_unknown_plan_is_answered_not_covered_and_labelled_a_datastore_answer():
+    """The coverage lookup is a scalar subquery, and a scalar subquery with no
+    matching row returns NULL, which `bool()` makes False. So a plan id that
+    exists nowhere gets the same answer as a plan that exists and does not
+    cover this merchant, with the same `source`.
+    """
+    # A datastore that covers exactly one pair, and knows nothing else.
+    pool = FakePool(covered=lambda plan, merchant:
+                    (plan, merchant) == ("GOLD", 1))
+    unknown = decide(_req(plan="PLAN-PLATINUM"), FakeState(pool))
+    examined = decide(_req("e2", plan="GOLD", merchant=2), FakeState(pool))
+    assert unknown["approved"] is False and unknown["source"] == SRC_DB
+    # The pair that was looked up, and not only the answer that came back.
+    # Without this the test passes against a decide() that ignores the
+    # request's plan altogether and asks about a fixed one, because both arms
+    # of the comparison below still come out False.
+    assert pool.asked == [("PLAN-PLATINUM", 1), ("GOLD", 2)]
+    # Indistinguishable, which is the finding rather than an incidental
+    # equality: a caller has no way to tell an unexamined pair from an
+    # examined negative.
+    assert (unknown["approved"], unknown["source"]) == \
+        (examined["approved"], examined["source"])
+
+
+def test_the_source_vocabulary_has_no_value_for_nothing_to_examine():
+    """The test above is a finding and not a nitpick. Every count in
+    results/ is grouped by `source`, so adding a value is a change to the
+    shape of the published evidence, and the absence of one for "no such plan"
+    is what makes an unknown input arrive as a definite verdict.
+    """
+    from service import decide as decide_module
+    sources = {v for k, v in vars(decide_module).items()
+               if k.startswith("SRC_")}
+    assert sources == {"db", "cache", "fallback_open", "fallback_closed",
+                       "kill_switch", "replay"}
+
+
+def test_the_plan_is_taken_from_the_request_and_never_from_the_member():
+    """README.md says the service is not hardened. This is one of the things
+    that means: `plan_id` arrives in the body, `coverage.member` is never
+    consulted, and a caller may ask about any plan for any member.
+    """
+    pool = FakePool(covered=lambda plan, merchant: plan == "PLAN-PLATINUM")
+    st = FakeState(pool)
+    out = decide(_req(member=4242, plan="PLAN-PLATINUM"), st)
+    assert out["approved"] is True
+    # The lookup used the CALLER'S plan, with the member id nowhere in it.
+    assert pool.asked == [("PLAN-PLATINUM", 1)]
 
 
 # ------------------------------------------------------------ idempotency

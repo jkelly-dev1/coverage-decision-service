@@ -84,8 +84,33 @@ class Pool:
 
         A SET is a round trip. Issuing one before every query would double the
         round trips per request and put that cost inside the very measurement
-        this repository is about. The value is constant within a sweep point,
-        so this costs one SET per connection per sweep point.
+        this repository is about, so the value is cached per connection.
+
+        How much that saves depends entirely on which arrangement is running,
+        and the two are not alike:
+
+          budget_covers_queue = False   `ms` is the whole configured timeout
+                                        (see `coverage` below), identical on
+                                        every request, so this really does
+                                        cost ONE SET per connection per sweep
+                                        point.
+
+          budget_covers_queue = True    `ms` is what is LEFT of the budget
+                                        after queueing for a connection. That
+                                        differs from request to request, so a
+                                        SET is re-issued whenever it differs,
+                                        which under load is most requests.
+                                        Measured against a fake driver with a
+                                        pool of one, 8 threads and 40 queries:
+                                        1 SET for the naive arm, 15 for this
+                                        one.
+
+        The arrangement the README favors therefore carries an extra round trip
+        inside the call, and the bias runs against it: the sound arrangement's
+        tail is measured with a cost the naive one mostly does not pay, so the
+        10.8x ratio in README.md section 1 is if anything understated. The
+        magnitude is not quantified here: it would need the stack running,
+        and this repository does not publish a figure it has not measured.
         """
         if self._timeout_state.get(id(conn)) == ms:
             return
@@ -114,10 +139,36 @@ class Pool:
         merchant would skip the fault injection and the latency distribution
         would have a fast mode nobody put there.
 
-        A merchant with no row is not covered, and that is a decision rather
-        than an accident: absence is the answer for the ordinary businesses a
-        card also touches, and returning an error for them would make the
-        service fall back on its most common input.
+        Absence is answered as "not covered", and that is a decision rather
+        than an accident: it is the right answer for the ordinary businesses a
+        card also touches, which have no coverage row at all, and returning an
+        error for them would make the service fall back on its most common
+        input.
+
+        The decision is broader than the case it was made for, though, and this is
+        the part a caller has to know. The scalar subquery returns NULL for
+        ANY pair with no row, so `bool(row[1])` is False for all of these and
+        they are indistinguishable from one another and from an examined
+        negative:
+
+            a real plan at a merchant that is genuinely not covered
+            a merchant id that does not exist
+            a plan id that does not exist, including "" and null
+
+        The response carries `"source": "db"` for every one of them. The
+        source vocabulary in service/decide.py has no value meaning "there was
+        nothing here to examine", so a caller cannot tell "looked, not
+        covered" from "nothing to look at". That is acceptable for a
+        measurement harness whose traffic is generated and whose plan ids are
+        drawn from a fixed set of three; it would not be acceptable in a
+        service anybody's benefits depended on.
+
+        The member-plan binding is also trusted from the caller. `plan_id`
+        arrives in the request body and is never checked against
+        coverage.member, so a caller may name any plan for any member and gets
+        that plan's coverage. README.md says the service is not hardened and
+        this is one of the things that means. It is pinned by
+        tests/test_decide_path.py so that it stays a stated decision.
         """
         deadline = time.perf_counter() + timeout_ms / 1000.0
         if budget_covers_queue:

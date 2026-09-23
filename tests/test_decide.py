@@ -175,3 +175,41 @@ def test_two_plans_at_the_same_merchant_are_different_cache_entries():
     c.put(("PLAN-BRONZE", 1), False)
     assert c.get(("PLAN-GOLD", 1), 1000) is True
     assert c.get(("PLAN-BRONZE", 1), 1000) is False
+
+
+# ---------------------------------------------------------------------------
+# What GET /stats answers
+# ---------------------------------------------------------------------------
+
+def test_stats_reports_the_pool_the_process_actually_built():
+    """The pool size comes from CDS_POOL_SIZE at startup and is not a config
+    field, so /config cannot answer it and lab.configure's read-back never
+    saw it. Experiment 1 refuses to run without this field, and a field no
+    test can see is one that can quietly stop being reported.
+    """
+    from service.decide import stats_payload
+    out = stats_payload({"db_hit": 3}, 12, 16)
+    assert out["pool_size"] == 16
+    assert out["cache_entries"] == 12
+    assert out["counters"] == {"db_hit": 3}
+
+
+def test_stats_reports_a_pool_that_is_not_built_yet_as_None_rather_than_omitting_it():
+    # An absent key and a null value read the same to a caller using .get();
+    # they do not read the same to one that refuses on either, which is what
+    # scripts/exp1_degradation.py does.
+    from service.decide import stats_payload
+    out = stats_payload({}, 0, None)
+    assert "pool_size" in out
+    assert out["pool_size"] is None
+
+
+def test_stats_copies_the_counters_rather_than_handing_out_the_live_dict():
+    # The handler holds the lock while it builds this and releases it before
+    # json.dumps runs. Handing out the live dict would let a worker thread
+    # mutate it mid-serialization.
+    from service.decide import stats_payload
+    live = {"db_hit": 1}
+    out = stats_payload(live, 0, 16)
+    live["db_hit"] = 999
+    assert out["counters"] == {"db_hit": 1}

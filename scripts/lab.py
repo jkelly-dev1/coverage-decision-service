@@ -56,12 +56,24 @@ def scalar(sql):
     return out.strip()
 
 
+def wrap_json(sql):
+    """Wrap a sub-query so Postgres serializes the rows.
+
+    The closing paren is on its own line, and that is not formatting. A
+    sub-query whose last line is a `--` comment swallows everything after it
+    up to the next newline, so `FROM (%s) t;` written on one line hands
+    Postgres a statement with an unclosed paren and no terminator; psql then
+    waits for more input rather than failing, which is the worst of the three
+    possible outcomes.
+    """
+    return ("SELECT coalesce(json_agg(t), '[]'::json)::text "
+            "FROM (%s\n) t;" % sql.rstrip().rstrip(";"))
+
+
 def query_json(sql):
     """Rows as a list of dicts. Postgres serializes, not psql: a text-mode
     parse would guess at NULL against the empty string."""
-    wrapped = ("SELECT coalesce(json_agg(t), '[]'::json)::text "
-               "FROM (%s) t;" % sql.rstrip().rstrip(";"))
-    return json.loads(scalar(wrapped))
+    return json.loads(scalar(wrap_json(sql)))
 
 
 def copy_rows(table, columns, rows):
@@ -158,6 +170,124 @@ def write_result(name, payload):
     return path
 
 
+class MissingResult(RuntimeError):
+    """A results file a script needs is not on disk.
+
+    Raised instead of letting FileNotFoundError escape, so a caller reports
+    the missing file and the command that writes it, not a traceback naming a
+    line in this file. A checker whose failure mode is a stack trace teaches a
+    reader to skim it.
+    """
+
+    def __init__(self, name, path):
+        self.name = name
+        self.path = path
+        # Every results file here is named for the script that writes it, so
+        # the remedy can be derived rather than looked up.
+        super().__init__(
+            "results/%s.json is missing (looked in %s).\n"
+            "Nothing has been checked. Produce it first:\n"
+            "    cd stack && docker compose up -d && cd ..\n"
+            "    python3 scripts/load.py\n"
+            "    python3 scripts/%s.py" % (name, path, name))
+
+
+# The four experiments, in the order they are run. Named once so that a script
+# asking "what was everything measured on" cannot silently ask about three.
+RESULT_NAMES = ("exp1_degradation", "exp2_fail_open_closed",
+                "exp3_cache_and_kill_switch", "exp4_idempotency")
+
+
 def read_result(name):
-    with open(os.path.join(RESULTS, name + ".json"), encoding="utf-8") as fh:
-        return json.load(fh)
+    path = os.path.join(RESULTS, name + ".json")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return json.load(fh)
+    except FileNotFoundError:
+        raise MissingResult(name, path) from None
+
+
+def shipped_input_manifests():
+    """The input manifest sha256 of every shipped results file, by name.
+
+    Returns {} when there are none to read, and the caller has to say so out
+    loud rather than treat an empty comparison as a passing one.
+    """
+    out = {}
+    for name in RESULT_NAMES:
+        try:
+            out[name] = read_result(name)["input_manifest_sha256"]
+        except MissingResult:
+            continue
+    return out
+
+
+def manifest_disagreements(recomputed_sha, shipped):
+    """Which shipped results were measured on a DIFFERENT world than this one.
+
+    Pure, and separate from the reading, so it can be tested without a results
+    directory and so the refusal it feeds cannot be a function of the network,
+    the container, or what happens to be on disk.
+    """
+    return sorted(name for name, sha in shipped.items()
+                  if sha != recomputed_sha)
+
+
+def service_pool_size():
+    """The pool the RUNNING service actually built, or None if it will not say.
+
+    The size comes from CDS_POOL_SIZE at startup and is not a config field, so
+    /config cannot answer this and lab.configure's read-back never touched it.
+    Experiment 1's whole premise is that concurrency is above the pool, so
+    the pool's size is read from the service rather than from a constant in
+    the experiment script.
+    """
+    return get("/stats").get("pool_size")
+
+
+# ---------------------------------------------------------------------------
+# The scored predictions, enumerated in one place
+# ---------------------------------------------------------------------------
+
+def scored_predictions(e1, e2, e3, e4):
+    """Every prediction this repository SCORED, with the verdict it got.
+
+    Enumerated here so the README's count of refuted predictions is derived:
+    a count of a repository's own refutations reads like a summary rather
+    than a measurement, so it is the figure least likely to be re-derived.
+
+    What counts as one prediction. Experiment 1 states a single claim and
+    scores it twice, once per arrangement (its own `note` says so), and the
+    two arrangement scorings are the atomic verdicts here. The experiment's
+    top-level verdict is REFUTED because it requires both to hold, so counting
+    it as well would count the same evidence twice.
+
+    Not included, and this is the other half of getting the count right: the
+    expectation in experiment 4 that the duplicates check-then-insert lets
+    through would also DISAGREE with each other. It is described in the README
+    and it was wrong in the interesting direction, but no script scores it and
+    no results file records a verdict for it, so it is not one of these.
+    """
+    p1 = e1["prediction"]
+    return [
+        ("a timeout bounds the tail, budget covering the queue",
+         p1["with_budget_covering_the_queue"]["verdict"]),
+        ("a timeout bounds the tail, statement timeout alone",
+         p1["with_a_statement_timeout_alone"]["verdict"]),
+        ("the winning policy flips inside the swept price range",
+         e2["prediction"]["verdict"]),
+        ("no TTL buys hit rate for free",
+         e3["predictions"]["no_ttl_buys_hit_rate_for_free"]["verdict"]),
+        ("a longer TTL never argues against itself on latency",
+         e3["predictions"]["longer_is_better_for_latency"]["verdict"]),
+        ("check-then-insert makes the authorize endpoint idempotent",
+         e4["prediction"]["verdict"]),
+    ]
+
+
+# Spelled out because the README spells them out. A sentence that reads "3 of
+# the 6" would be derivable without this and would also not be the sentence
+# anybody wrote.
+NUMBER_WORDS = {0: "none", 1: "one", 2: "two", 3: "three", 4: "four",
+                5: "five", 6: "six", 7: "seven", 8: "eight", 9: "nine",
+                10: "ten"}

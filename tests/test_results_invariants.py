@@ -100,12 +100,38 @@ def test_no_driver_side_errors_are_hidden_in_the_latency_figures(exp1):
 # EXPERIMENT 2: fail open or fail closed
 # ---------------------------------------------------------------------------
 
-def test_the_two_policies_agree_when_nothing_falls_back(exp2):
-    # The control. At zero injected delay the fallback policy is barely
-    # consulted, so the two runs must be close. They are not identical,
-    # concurrency times a few requests out either way, and the results
-    # record the gap.
+def test_the_two_policies_error_totals_are_close_when_almost_nothing_falls_back(
+        exp2):
+    # The control, named for what it actually asserts. At zero injected delay
+    # the fallback still fires on about 6 percent of requests (concurrency
+    # alone blows a 50 ms budget sometimes), so something does fall back and
+    # the two runs do not agree; their error totals are close.
+    #
+    # A difference of totals is not a count of decisions that differ: the two
+    # runs fell back on different requests. The recorded figure's name is
+    # broader than what it holds, which is |errors_closed - errors_open|.
     assert exp2["control_gap_decisions_at_zero_delay"] < exp2["requests"] * 0.05
+
+
+def test_a_fail_closed_run_records_approvals_its_fallback_cannot_explain(exp2):
+    """The fallback cannot produce every error in those rows: a fail-closed
+    fallback only ever denies, so an approval in a fail-closed run came from
+    the datastore and not from the fallback.
+
+    Those approvals are real and they are the answer key's time-awareness
+    showing through. The key records what was true at each event's own
+    timestamp; experiments 1 and 2 hold coverage at its time-zero state and
+    leave the 194 changes to experiment 3. A handful of the first 6,000 events
+    therefore carry a key the database no longer matches.
+    """
+    ctrl = [r for r in exp2["runs"] if r["inject_db_delay_ms"] == 0
+            and r["fallback"] == "closed"][0]
+    # The fallback that ran in this arm can only have denied.
+    assert set(ctrl["by_source"]) <= {"db", "fallback_closed"}
+    assert ctrl["by_source"].get("fallback_open", 0) == 0
+    # These approvals are therefore datastore answers, and the prose may not
+    # attribute them to the fallback.
+    assert ctrl["wrongly_approved"] > 0
 
 
 def test_fail_closed_never_bills_anybody_and_fail_open_never_turns_anybody_away(
@@ -330,3 +356,27 @@ def test_all_four_experiments_measured_the_same_generated_world(
         exp1, exp2, exp3, exp4):
     shas = {d["input_manifest_sha256"] for d in (exp1, exp2, exp3, exp4)}
     assert len(shas) == 1
+
+
+# ---------------------------------------------------------------------------
+# How many predictions there were, and how many were refuted
+# ---------------------------------------------------------------------------
+
+def test_every_scored_prediction_is_enumerated_with_its_verdict(
+        exp1, exp2, exp3, exp4):
+    """The README says how many predictions were refuted, and that sentence is
+    the repository's claim about its own honesty. It was counted by hand and
+    was wrong. `lab.scored_predictions` is now the single enumeration that
+    scripts/check_readme_numbers.py derives the sentence from, and this pins
+    its shape: one entry per scored verdict, no duplicates, nothing unscored.
+    """
+    import lab
+    got = lab.scored_predictions(exp1, exp2, exp3, exp4)
+    labels = [label for label, _ in got]
+    assert len(labels) == len(set(labels)), "a prediction is enumerated twice"
+    for label, verdict in got:
+        assert verdict in ("held", "REFUTED"), (label, verdict)
+    # Refuted predictions are kept rather than quietly dropped, which is only
+    # a claim worth making if some were refuted.
+    assert any(v == "REFUTED" for _, v in got)
+    assert any(v == "held" for _, v in got)

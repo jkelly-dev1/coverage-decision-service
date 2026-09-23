@@ -95,16 +95,23 @@ def main():
                      r["wrongly_denied"], r["wrongly_approved"], r["accuracy"]))
     print()
 
-    # The control. With no injected delay nothing falls back, so the fallback
-    # policy is never consulted and the two runs must agree. They will not
-    # agree exactly, concurrency means a few requests time out even at zero
-    # delay, so the check is on the ERROR COUNTS being close rather than
-    # identical, and the run prints the gap.
+    # The control, and what it does NOT establish. With no injected delay the
+    # fallback still fires on a few percent of requests (concurrency alone
+    # blows a 50 ms budget sometimes), so the policy is consulted and the two
+    # runs do not agree exactly.
+    #
+    # What is compared here is each run's total error count, and the gap
+    # between two totals is not a count of decisions that disagree. The two
+    # runs fell back on different requests, so the number of decisions that
+    # actually differ is at least this gap and at most the two fallback counts
+    # added together. This experiment does not record which requests those
+    # were, so it cannot report the disagreement, and the sentence below says
+    # TOTALS for that reason.
     ctrl = [r for r in rows if r["inject_db_delay_ms"] == 0]
     control_gap = abs(ctrl[0]["wrongly_denied"] + ctrl[0]["wrongly_approved"]
                       - ctrl[1]["wrongly_denied"] - ctrl[1]["wrongly_approved"])
-    print("control at 0 ms: the two policies differ by %d decisions out of %d"
-          % (control_gap, ctrl[0]["scored"]))
+    print("control at 0 ms: the two policies' error TOTALS differ by %d, "
+          "out of %d scored" % (control_gap, ctrl[0]["scored"]))
     print()
 
     # ---- price the two error kinds -----------------------------------------
@@ -165,6 +172,11 @@ def main():
         "analytic_crossover_price": round(analytic, 6),
         "runs": rows,
         "priced": priced,
+        # The key's name is broader than what it holds: |errors_closed -
+        # errors_open| at zero delay, a difference of totals and not a count
+        # of differing decisions (see the comment above the print). It keeps
+        # the spelling the shipped results files carry, since renaming it
+        # would need a re-run, and a re-run is a re-measurement.
         "control_gap_decisions_at_zero_delay": control_gap,
         "prediction": dict(PREDICTION,
                            distinct_winners=flips,

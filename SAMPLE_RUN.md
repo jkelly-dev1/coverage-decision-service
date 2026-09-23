@@ -5,11 +5,29 @@ Docker, driver on Python 3.13.7. Every command below was executed exactly as
 written, in this order, after `cd stack && docker compose down -v` removed both
 containers and the volume.
 
-Two alterations, both stated here and nowhere else. The `docker compose up`
-banner is reduced to its final two lines, because compose reprints each step as
-it works. And the closing `check_readme_numbers.py` block is its output AFTER
-the README figures were synced to this run; the captured attempt named the
-previous run's figures, which is exactly what that script is for.
+Three alterations, all of them stated here and nowhere else.
+
+Only the final two lines of the `docker compose up` banner are kept, because
+compose reprints each step as it works.
+
+The closing `check_readme_numbers.py` block is its output AFTER the README
+figures were synced to this run; the captured attempt named the previous run's
+figures, which is exactly what that script is for.
+
+The `pytest` and `check_readme_numbers.py` blocks were RE-RUN and pasted
+verbatim rather than left as captured, because both are offline and
+deterministic (they need neither Docker nor Postgres), so what they print is a
+property of the tree and not of the 2026-08-23 machine. Everything above them
+is the original capture, untouched.
+
+Two lines of the current scripts' output differ from this capture, and both
+are left as the run printed them, because a document like this exists to
+avoid inserting output nobody observed. `scripts/load.py` also prints a line
+comparing the generator's manifest against the `input_manifest_sha256` in
+every shipped results file before it touches the schema. `scripts/exp2_fail_open_closed.py` words its control line as "the two
+policies' error TOTALS differ by 123, out of 6000 scored", where this run
+printed "differ by 123 decisions": the figure is a difference of totals, as
+the README says.
 
 What moves between runs and what does not. Every microsecond figure moves, and
 so do the small duplicate counts in experiment 4, which are races. What does NOT
@@ -159,11 +177,11 @@ prediction: REFUTED
 wrote results/exp4_idempotency.json
 
 $ python -m pytest -q
-........................................................................ [ 98%]
-.                                                                        [100%]
-88 passed in 0.89s
+........................................................................ [ 60%]
+................................................                         [100%]
+120 passed in 4.61s
 
 $ python3 scripts/check_readme_numbers.py
-69 figures re-derived from results/*.json and checked against README.md
+74 figures re-derived from results/*.json and checked against README.md
 all present
 ```

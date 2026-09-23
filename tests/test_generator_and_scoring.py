@@ -23,16 +23,84 @@ def test_the_world_is_a_pure_function_of_the_seed():
     assert a["sha256"] == b["sha256"]
 
 
+# What the generator is allowed to import. Everything that could give it a
+# clock or an entropy source is absent from this set:
+# an allowlist of imports cannot be walked around by reaching for a sibling
+# API, which a denylist of substrings can.
+GENERATOR_MAY_IMPORT = {"argparse", "hashlib", "json", "sys"}
+
+# Nor may it reach a module without importing one.
+NO_DYNAMIC_IMPORT = {"__import__", "eval", "exec", "compile"}
+
+
 def test_nothing_in_the_generator_reads_the_clock():
-    # A generator that reads the clock produces different data on every run
-    # and makes every published number unreproducible. Checked by source
-    # rather than by behavior: a clock read that only fires occasionally would
-    # pass a behavioral check almost every time.
+    """A generator that reads the clock produces different data on every run
+    and makes every published number unreproducible. Checked by SOURCE rather
+    than by behavior: a clock read that only fires occasionally would pass a
+    behavioral check almost every time, and the determinism test above builds
+    the world twice IN ONE PROCESS, where even an unconditional clock read at
+    import time is read once and compares equal to itself.
+
+    It is checked by the imports rather than by forbidden substrings. A denylist of
+    strings is not a statement about clocks: forbid "time.time", "datetime.now"
+    and "random." and `time.monotonic`, `time.perf_counter`, `time.time_ns`,
+    `datetime.utcnow`, `from random import random`, `secrets.token_bytes` and
+    `uuid.uuid4` all walk straight past it, each of them a clock or an entropy
+    source by another spelling.
+
+    An allowlist over the imports has no siblings to reach for. The generator
+    imports four modules and none of them can tell it the time.
+    """
+    import ast
     import inspect
-    src = inspect.getsource(gen)
-    for forbidden in ("time.time", "datetime.now", "datetime.today",
-                      "random.", "os.urandom"):
-        assert forbidden not in src, forbidden
+
+    tree = ast.parse(inspect.getsource(gen))
+    imported = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                imported.add(alias.name.split(".")[0])
+        elif isinstance(node, ast.ImportFrom):
+            # A relative import has no module name to check, and the
+            # generator has no package to be relative to, so it is refused
+            # rather than ignored.
+            imported.add("." if node.level else
+                         (node.module or "").split(".")[0])
+    extra = sorted(imported - GENERATOR_MAY_IMPORT)
+    assert not extra, (
+        "the generator imports %s; it may import only %s, and anything else "
+        "could give it a clock or an entropy source"
+        % (extra, sorted(GENERATOR_MAY_IMPORT)))
+
+    reached = {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)}
+    dynamic = sorted(reached & NO_DYNAMIC_IMPORT)
+    assert not dynamic, (
+        "the generator uses %s, which reaches a module the import allowlist "
+        "never sees" % dynamic)
+
+
+def test_the_generator_still_builds_the_world_the_results_were_measured_on():
+    """Every number in README.md describes one generated world, and every
+    results file names it by sha256. An edit to a generator constant (say
+    PROVIDER_SHARE 0.55 to 0.60, which makes 1,202 provider merchants and 218
+    coverage changes instead of 1,111 and 194) builds a different world while
+    leaving the shipped evidence describing the old one. The world table in the
+    README is prose and no script derives it, so nothing else in this suite can
+    see that happen.
+
+    scripts/load.py refuses on the same comparison before it writes. This is
+    that comparison with no Docker and no Postgres, for everybody who only runs
+    the suite.
+    """
+    import lab
+    shipped = lab.shipped_input_manifests()
+    assert len(shipped) == len(lab.RESULT_NAMES), (
+        "a results file is missing, so this comparison examined only %s"
+        % sorted(shipped))
+    sha = gen.manifest(*gen.build())["sha256"]
+    assert lab.manifest_disagreements(sha, shipped) == [], (
+        "the generator now builds %s; the shipped results were measured on %s"
+        % (sha, sorted(set(shipped.values()))))
 
 
 def test_two_different_coordinates_cannot_collide_into_one_draw():
