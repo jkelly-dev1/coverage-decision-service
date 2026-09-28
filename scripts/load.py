@@ -5,7 +5,7 @@
 Only the coverage rows that are true at time zero are loaded. The 194 status
 changes are NOT: they are applied by the experiment driver as it advances
 through the event stream, because coverage.network_status is what the service
-reads and it has to hold what is true NOW rather than everything that will
+reads and it has to hold what is true NOW instead of everything that will
 ever be true. Loading them all up front would make the service answer every
 early event with a value that had not happened yet, and every staleness figure
 in experiment 3 would be measuring the loader.
@@ -13,7 +13,7 @@ in experiment 3 would be measuring the loader.
 It refuses to load something else. The manifest is recomputed here and
 compared against the `input_manifest_sha256` every shipped results file
 carries, before the schema is touched, so a generator that has been edited
-cannot quietly put a number in results/ that no clone can reproduce. If there
+cannot silently put a number in results/ that no clone can reproduce. If there
 are no results to compare against, as in a tree that has never been run, it
 says so and loads anyway, because "nothing to compare" is not "compared and
 equal" and the difference belongs in the output rather than in a reader's

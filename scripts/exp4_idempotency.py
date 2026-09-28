@@ -35,13 +35,13 @@ Expect it REFUTED under the burst and NOT under the spread, because the defect
 is a race and a race needs concurrency to show.
 
 One part of that expectation was wrong and the measurement says so. The
-duplicates check-then-insert lets through do NOT disagree with each other, and
-that is structural rather than luck: the deliveries that slip past the check
-are the ones that arrive in the same instant, before any row exists, so they
-are all doing identical work against an identically slow datastore and all
-reach the same answer. The disagreeing duplicates appear where there is no
-guard at all, because those deliveries are spread across the whole burst and
-some of them fall back while others do not.
+duplicates check-then-insert lets through do NOT disagree with each other. Why
+is not established. The racers do identical work against an identically slow
+datastore, which would make them agree; but that run also fell back on only 1
+of its 163 decisions, which is consistent with its pre-check waiting for a
+connection outside the budget (service/db.py), so it had almost no fallbacks to
+disagree with. The disagreeing duplicates appear where there is no guard at
+all, where some deliveries fall back and others do not.
 """
 
 import os
@@ -146,7 +146,7 @@ def burst(guard):
     events = driver.load_events(limit=BURST_EVENTS, include_replays=False)
     # Interleaved, not grouped. Sending twenty copies of one event and then
     # twenty of the next would let each group finish before the next began and
-    # would quietly serialize the very thing under test.
+    # would silently serialize the very thing under test.
     requests = []
     for _ in range(BURST_COPIES):
         for e in events:
@@ -170,6 +170,16 @@ def burst(guard):
     })
     return a
 
+
+
+def removal_share(guarded, unguarded):
+    """The share of the unguarded run's duplicate rows the guard removed.
+
+    Both rows must come from the SAME workload: the burst against the burst.
+    """
+    if not unguarded["duplicate_rows"]:
+        raise ValueError("the unguarded run wrote no duplicates to remove")
+    return 1 - guarded["duplicate_rows"] / float(unguarded["duplicate_rows"])
 
 def main():
     if not lab.service_ready(30):
@@ -231,8 +241,7 @@ def main():
              none_burst["distinct_events_delivered"]))
     print()
     print("THE SHAPE OF THE RESULT: check-then-insert removes %.2f%% of the "
-          "duplicates" % (100.0 * (1 - cti_burst["duplicate_rows"]
-                                   / float(none_burst["duplicate_rows"]))))
+          "duplicates" % (100.0 * removal_share(cti_burst, none_burst)))
     print("without removing all of them, which is the worst kind of "
           "guarantee: it")
     print("survives every test anybody writes by hand and fails at volume.")
@@ -249,16 +258,12 @@ def main():
         "check_then_insert_looks_correct_when_replays_are_spread":
             looks_fine_when_spread,
         "duplicates_removed_by_check_then_insert_under_burst": round(
-            1 - cti_burst["duplicate_rows"]
-            / float(none_burst["duplicate_rows"]), 6),
-        # Why the surviving duplicates agree. The deliveries that slip past
-        # the check are the ones racing in the first instant, before any row
-        # exists; they are doing identical work against an identically slow
-        # datastore and reach the same answer. Contradictory pairs need
-        # deliveries spread across the burst, which is what the unguarded run
-        # has.
+            removal_share(cti_burst, none_burst), 6),
+        # Why the surviving duplicates agree is not established; the module
+        # docstring gives the two candidate explanations.
         "why_check_then_insert_duplicates_agree":
-            "the racers slip through in the same instant and do identical work",
+            "not established: the racers do identical work, and the run fell "
+            "back on almost none of its decisions",
         "check_then_insert_fails_under_simultaneous_replay": fails_under_burst,
         "unique_constraint_holds_under_simultaneous_replay": unique_holds,
         "prediction": dict(

@@ -74,7 +74,7 @@ def _bits(*parts):
 
     Keyed rather than concatenated so that ("a", "bc") and ("ab", "c") cannot
     collide, which is the failure that makes a generator look random while
-    quietly correlating two fields.
+    silently correlating two fields.
     """
     msg = "|".join(str(p) for p in parts).encode("utf-8")
     return int.from_bytes(
@@ -94,7 +94,12 @@ def pick(seq, *parts):
 
 
 def skewed_rank(n, *parts):
-    """A rank in [1, n], heavily concentrated on the low ranks.
+    """A rank in [2, n], heavily concentrated on the low ranks.
+
+    Rank 1 is never drawn: `int(n ** u)` is at least 1, so `1 + ... % n`
+    starts at 2. Merchant 1 therefore gets no traffic. It is documented
+    rather than fixed, because changing it would change the generated world
+    and every published figure with it.
 
     n ** u for u uniform in [0, 1) is log-uniform: half the draws land in the
     first sqrt(n) ranks. That is a coarse stand-in for the popularity
@@ -138,7 +143,7 @@ def network_status():
                 # The change lands in the middle 80 percent of the run, so
                 # every change has traffic on both sides of it. A change in
                 # the first or last instant would be unobservable and would
-                # quietly dilute the staleness measurement.
+                # silently dilute the staleness measurement.
                 at = int(RUN_MS * 0.1) + _bits("changeat", plan, m) % int(
                     RUN_MS * 0.8)
                 rows.append({"plan_id": plan, "merchant_id": m,

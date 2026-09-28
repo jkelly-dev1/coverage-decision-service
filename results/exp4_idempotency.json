@@ -129,5 +129,5 @@
     ]
   },
   "unique_constraint_holds_under_simultaneous_replay": true,
-  "why_check_then_insert_duplicates_agree": "the racers slip through in the same instant and do identical work"
+  "why_check_then_insert_duplicates_agree": "not established: the racers do identical work, and the run fell back on almost none of its decisions"
 }

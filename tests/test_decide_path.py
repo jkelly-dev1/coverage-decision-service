@@ -16,8 +16,8 @@ left the suite green:
     the check-then-insert replay guard disabled, so a webhook counts twice
     the unique-constraint replay marked as a fresh decision
 
-`service/db.py` still is not imported; it needs psycopg and that exclusion is
-deliberate. What made testing `decide()` look impossible was that it takes a
+This file does not import `service/db.py`; it needs psycopg, and
+tests/test_http_handler.py reaches it through a stub. What made testing `decide()` look impossible was that it takes a
 live pool. It does not: it takes something with `.coverage()` and
 `.record()`, which is thirty lines of fake.
 """
@@ -39,7 +39,7 @@ class FakePool:
     """A datastore that answers from a dict, on demand, with a chosen failure.
 
     `raises` is the shape of the failure, which matters: `decide()` counts a
-    TimeoutError apart from any other exception on purpose, and folding them
+    TimeoutError apart from any other exception, and folding them
     together would make a broken pool look like a blown latency budget.
     """
 
@@ -132,7 +132,7 @@ def test_a_timeout_falls_back_and_is_counted_as_a_timeout():
 
 
 def test_an_error_falls_back_and_is_counted_apart_from_a_timeout():
-    """The two are counted separately on purpose: folding them together makes
+    """The two are counted separately: folding them together makes
     a broken dependency look like a blown latency budget."""
     st = FakeState(FakePool(raises=ConnectionResetError("gone")), fallback="closed")
     out = decide(_req(), st)
@@ -283,7 +283,7 @@ def test_the_kill_switch_does_not_so_much_as_consult_the_cache():
 # ------------------------------------- what the service does NOT know
 #
 # Pinned so that it stays a stated decision. service/db.py's `coverage`
-# docstring and README.md's "What this does not measure" both describe this
+# docstring and README.md's "Limits" section both describe this
 # behavior; without a test, the description is the only thing holding it.
 
 def test_an_unknown_plan_is_answered_not_covered_and_labelled_a_datastore_answer():

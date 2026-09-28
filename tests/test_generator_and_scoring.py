@@ -215,12 +215,12 @@ def test_the_two_error_kinds_are_counted_apart():
     """(mutation-checked: swap the two branches and experiment 2's crossover
     inverts, recommending the opposite policy at every price)
 
-    The fixture is deliberately asymmetric, two of one kind and one of the
-    other, because that is what makes the mutation check true. With one error
-    of each kind the two counters are both 1 whichever branch increments
-    which, so swapping them is invisible and the advertised check passes on a
-    swap that inverts the whole cost argument. On the shipped run the same
-    swap moves 1,921 wrongly-denied to 1,921 wrongly-approved.
+    The fixture is asymmetric, two of one kind and one of the other, because
+    that is what makes the mutation check true. With one error of each kind the
+    two counters are both 1 whichever branch increments which, so swapping them
+    is invisible and the advertised check passes on a swap that inverts the
+    whole cost argument. On the shipped run the same swap moves 1,921
+    wrongly-denied to 1,921 wrongly-approved.
     """
     truth = {"a": {"covered": True}, "b": {"covered": True},
              "c": {"covered": False}}

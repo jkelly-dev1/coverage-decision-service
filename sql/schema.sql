@@ -25,9 +25,8 @@ CREATE TABLE coverage.member (
 CREATE TABLE coverage.merchant (
     merchant_id     integer PRIMARY KEY,
     -- The provider behind the card terminal. A merchant that is not a health
-    -- provider at all is the easy case and is deliberately present: a
-    -- decision service that only ever sees providers has never met the
-    -- traffic it will actually get.
+    -- provider at all is the easy case and is present: a decision service that
+    -- only ever sees providers has never met the traffic it will actually get.
     is_provider     boolean NOT NULL
 );
 
@@ -114,9 +113,8 @@ CREATE TABLE truth.event (
     -- correct answer now. An event that arrives one millisecond before a
     -- status change has a different right answer than the one after it, and a
     -- truth table that stored only the final state would score a correct
-    -- service as wrong.
-    -- Redundant columns deliberately absent. Whether a delivery is a replay
-    -- belongs to truth.arrival, not here: an EVENT is never a replay, a
+    -- service as wrong. Redundant columns absent. Whether a delivery is a
+    -- replay belongs to truth.arrival, not here: an EVENT is never a replay, a
     -- DELIVERY of it is. Carrying the flag in both places would let them
     -- disagree.
     covered         boolean NOT NULL

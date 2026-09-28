@@ -63,7 +63,7 @@ def wrap_json(sql):
     sub-query whose last line is a `--` comment swallows everything after it
     up to the next newline, so `FROM (%s) t;` written on one line hands
     Postgres a statement with an unclosed paren and no terminator; psql then
-    waits for more input rather than failing, which is the worst of the three
+    waits for more input instead of failing, which is the worst of the three
     possible outcomes.
     """
     return ("SELECT coalesce(json_agg(t), '[]'::json)::text "

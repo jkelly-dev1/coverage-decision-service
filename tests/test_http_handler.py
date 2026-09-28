@@ -108,6 +108,18 @@ def test_post_config_changes_the_configuration_it_reports(app, serve):
     assert serve("GET", "/config")[1][key] is (not value)
 
 
+def test_a_refused_config_value_is_a_400_and_not_a_handler_fault(app, serve):
+    """A value Config.update refuses is the caller's mistake: a 400 naming
+    it, the configuration unchanged, and no handler_error counted."""
+    key, allowed = next(iter(app.STATE.config.CHOICES.items()))
+    before = app.STATE.config.as_dict()
+    status, body = serve("POST", "/config", {key: "no-such-" + allowed[0]})
+    assert status == 400
+    assert body["error"] == "ValueError" and key in body["detail"]
+    assert app.STATE.config.as_dict() == before
+    assert app.STATE.counters.get("handler_error") is None
+
+
 def test_authorize_hands_the_request_body_to_decide(app, serve, monkeypatch):
     seen = []
 

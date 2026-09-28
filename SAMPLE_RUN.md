@@ -177,11 +177,11 @@ prediction: REFUTED
 wrote results/exp4_idempotency.json
 
 $ python -m pytest -q
-........................................................................ [ 60%]
-................................................                         [100%]
-120 passed in 4.61s
+........................................................................ [ 54%]
+...........................................................              [100%]
+131 passed in 4.16s
 
 $ python3 scripts/check_readme_numbers.py
-74 figures re-derived from results/*.json and checked against README.md
+105 figures re-derived from results/*.json and checked against README.md
 all present
 ```

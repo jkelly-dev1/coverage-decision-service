@@ -62,9 +62,9 @@ services:
     # then be measuring that parser. The standard client keeps this
     # repository's own code out of the measurement.
     #
-    # It is installed in the image and nowhere else. tests/ imports only the
-    # decision logic and the shipped results, so CI still installs pytest
-    # alone and never starts a container.
+    # It is installed in the image and nowhere else. tests/ stubs it where a
+    # handler needs it, so CI still installs pytest alone and never starts a
+    # container.
     command: ["python", "-u", "-m", "service.app"]
     environment:
       CDS_PGHOST: postgres

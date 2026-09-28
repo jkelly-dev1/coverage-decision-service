@@ -96,7 +96,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == "/healthz":
-            # Touches nothing on purpose. It is the no-op floor experiment 1
+            # Touches nothing. It is the no-op floor experiment 1
             # measures the rest of the service against, so it must not acquire
             # a connection, read the cache or take the lock.
             self._send(200, {"ok": True})
@@ -121,7 +121,15 @@ class Handler(BaseHTTPRequestHandler):
             if self.path == "/config":
                 body = self._read_json()
                 with STATE.lock:
-                    STATE.config.update(body)
+                    try:
+                        STATE.config.update(body)
+                    except ValueError as exc:
+                        # The caller's mistake, not a fault in the handler:
+                        # refused before anything is stored, and not counted
+                        # as a handler_error.
+                        self._send(400, {"error": "ValueError",
+                                         "detail": str(exc)})
+                        return
                     if body.get("clear_cache"):
                         STATE.cache.clear()
                     if body.get("reset_counters"):

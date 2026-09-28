@@ -8,18 +8,19 @@ same setting. This sweeps the TTL and measures both sides against the answer
 key at the moment of each decision.
 
 The coverage changes are applied as the stream is replayed, not loaded up
-front. 194 (plan, merchant) pairs change status partway through the run, and
-the driver inserts each change when the virtual clock passes it. That is the
-only reason a cached answer can be stale, and loading them all at the start
-would make every staleness figure here a measurement of the loader.
+front. The world holds 194 (plan, merchant) status changes; the replayed window
+reaches 134 of them and the chunked schedule applies 130, each inserted when
+the virtual clock passes it. That is the only reason a cached answer can be
+stale, and loading them all at the start would make every staleness figure here
+a measurement of the loader.
 
-The denominator is stated and it is not 20,000. Only the decisions whose
+The denominator is stated and it is not the 12,000 decisions replayed. Only the decisions whose
 coverage had actually changed can be wrong because of staleness. Reporting
 stale errors as a share of all decisions would divide a real effect by a
 number chosen to make it look small; this reports them against the events that
 were affected, and states that count.
 
-The timeout is deliberately generous here. Experiment 1 is about the budget;
+The timeout is generous here. Experiment 1 is about the budget;
 this one is about the cache, and a run where requests were also falling back
 would confound the two. Nothing times out in this experiment and the results
 file records that.
@@ -106,6 +107,28 @@ def affected_event_ids(changes):
     return ids
 
 
+def score_affected(records, by_id, affected):
+    """(decisions, wrong, wrong and served from cache), over affected events.
+
+    Only a decision on an event whose coverage changed can be a staleness
+    error, so these are the only ones counted. A failed request is not a
+    decision and is skipped.
+    """
+    total = wrong = wrong_from_cache = 0
+    for r in records:
+        if r.get("status") != 200 or "approved" not in r:
+            continue
+        if r["event_id"] not in affected:
+            continue
+        total += 1
+        truth = by_id.get(r["event_id"])
+        if truth is not None and r["approved"] != truth["covered"]:
+            wrong += 1
+            if r["source"] == "cache":
+                wrong_from_cache += 1
+    return total, wrong, wrong_from_cache
+
+
 def run_ttl(events, changes, ttl_ms, affected):
     """Replay the stream in chunks, applying changes as the clock passes them."""
     reset_status()
@@ -137,18 +160,8 @@ def run_ttl(events, changes, ttl_ms, affected):
 
     # Errors split by whether the decision could possibly have been a
     # staleness error at all.
-    aff_total = aff_wrong = aff_wrong_from_cache = 0
-    for r in records:
-        if r.get("status") != 200 or "approved" not in r:
-            continue
-        if r["event_id"] not in affected:
-            continue
-        aff_total += 1
-        truth = by_id.get(r["event_id"])
-        if truth is not None and r["approved"] != truth["covered"]:
-            aff_wrong += 1
-            if r["source"] == "cache":
-                aff_wrong_from_cache += 1
+    aff_total, aff_wrong, aff_wrong_from_cache = score_affected(
+        records, by_id, affected)
 
     stats = lab.get("/stats")
     row = dict(driver.summarize(lat))

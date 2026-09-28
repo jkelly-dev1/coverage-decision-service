@@ -1,9 +1,9 @@
 """The decision itself, and everything about it that can be tested offline.
 
-This file holds the logic and not the plumbing, on purpose. Every rule that
-decides what a member is told lives here as a pure function or as a small
-class with an injectable clock, so tests/ can exercise all of it with pytest
-alone and no container. The database access it needs is passed in.
+This file holds the logic and not the plumbing. Every rule that decides what a
+member is told lives here as a pure function or as a small class with an
+injectable clock, so tests/ can exercise all of it with pytest alone and no
+container. The database access it needs is passed in.
 
 The three decisions this service makes, and each one is a published
 measurement rather than a default:
@@ -51,8 +51,9 @@ class Config:
         # than a decision because both implementations exist in the world and
         # the difference between them is invisible until the pool saturates.
         #
-        # True  the deadline starts when the request arrives; time spent
-        #       queueing for a connection is spent out of the same budget.
+        # True  the deadline covers queueing for a connection and the
+        #       coverage query together. With record on, the idempotency
+        #       pre-check and the decision write are outside it (see db.py).
         # False the naive arrangement: wait as long as it takes for a
         #       connection, THEN give the query the full timeout. Every
         #       individual database call respects the budget and the caller
@@ -81,7 +82,16 @@ class Config:
         for k, v in self.FIELDS.items():
             setattr(self, k, v)
 
+    CHOICES = {"fallback": ("open", "closed"),
+               "guard": (GUARD_NONE, GUARD_CHECK_THEN_INSERT, GUARD_UNIQUE)}
+
     def update(self, body):
+        # An unknown choice is refused here, at the /config call, rather than
+        # stored and discovered as a 500 on the first request that reaches it.
+        for k, allowed in self.CHOICES.items():
+            if k in body and body[k] not in allowed:
+                raise ValueError("%s must be one of %s, not %r"
+                                 % (k, ", ".join(allowed), body[k]))
         for k, v in body.items():
             if k in self.FIELDS:
                 setattr(self, k, v)
@@ -155,7 +165,7 @@ class Cache:
 def fallback_answer(fallback):
     """What to say when the budget is blown.
 
-    Raises on an unknown policy rather than defaulting. A typo in a config
+    Raises on an unknown policy instead of defaulting. A typo in a config
     sweep would otherwise silently pick one of the two policies the experiment
     is comparing, and the run would look complete.
     """
@@ -169,11 +179,10 @@ def fallback_answer(fallback):
 def stats_payload(counters, cache_entries, pool_size):
     """What GET /stats answers.
 
-    A function rather than a dict literal in the handler, because
-    service/app.py cannot be imported without psycopg and so nothing in the
-    offline suite can reach a handler. `pool_size` is the field experiment 1
+    A function rather than a dict literal in the handler, so the field list
+    can be tested without a running service. `pool_size` is the field experiment 1
     refuses to run without, and a field no test can see is a field that can
-    quietly stop being reported.
+    silently stop being reported.
 
     `pool_size` is None before the pool is built. Reporting it as None rather
     than omitting the key is what lets the caller tell "the service does not

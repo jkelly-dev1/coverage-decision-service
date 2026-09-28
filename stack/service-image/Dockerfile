@@ -1,6 +1,7 @@
-# The decision service's runtime. Pinned, because a latency measurement taken
-# against a floating base image is a measurement of whatever was on the
-# registry that day.
+# The decision service's runtime, pinned by tag and not by digest. The digest
+# this tag resolved to for the shipped results was not recorded, and a digest
+# taken later would name an image those results were not measured on. A
+# rebuild can pull a newer image under the same tag; the README says so.
 FROM python:3.13-slim-bookworm
 
 # psycopg ONLY. Nothing else is installed, and the version is pinned for the

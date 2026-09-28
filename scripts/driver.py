@@ -125,10 +125,10 @@ class Worker(threading.Thread):
 def run(requests, concurrency, path="/authorize"):
     """Send every request with `concurrency` workers. Returns the records.
 
-    The result order is not the request order, deliberately. Nothing
-    downstream may depend on it: a concurrent driver exists so that
-    completion order is not submission order, and a caller that assumed
-    otherwise would be reading a different experiment's data.
+    The result order is not the request order. Nothing downstream may depend on
+    it: a concurrent driver exists so that completion order is not submission
+    order, and a caller that assumed otherwise would be reading a different
+    experiment's data.
     """
     work = queue.Queue(maxsize=concurrency * 4)
     out = []
@@ -171,7 +171,7 @@ def load_events(limit=None, offset=0, include_replays=True):
     Replays are excluded for the experiments that count errors, and included
     for the one that is about them. A replay is the same event delivered
     again, so scoring it counts one provider's coverage decision twice and
-    quietly weights the busiest events higher in every accuracy figure.
+    silently weights the busiest events higher in every accuracy figure.
     Experiment 4 is the only place the duplicate deliveries are the subject.
     """
     sql = """

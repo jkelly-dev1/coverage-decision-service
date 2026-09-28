@@ -19,7 +19,9 @@ figures are read from the shipped results files, and the predictions were
 written before the runs. The ones that were refuted stayed in.
 
 What you need to run it: Docker and Python 3.11 or later. `docker compose up -d`
-starts one Postgres and one small Python service, both bound to loopback. There
+starts one Postgres and one small Python service, both published only on
+loopback by `stack/compose.yaml` (a test reads the bindings; the service
+process itself listens on every interface inside its container). There
 is no corpus to download and no cloud account: the members, merchants, coverage
 changes and authorizations are a pure function of a seed. The test suite needs
 neither Docker nor Postgres.
@@ -35,9 +37,9 @@ Four questions, and the numbers that answer them:
 In one paragraph. The same 50 ms timeout produces a tail 10.8 times longer
 when it does not cover the wait for a connection, and every individual database
 call respected the budget in both cases. Fail-open is the right choice only
-while an unexpected bill costs less than 0.47 of a member turned away, and that
-crossover is set by the coverage base rate rather than by anything about the
-service. A 250 ms cache TTL buys a 28.7 percent hit rate for no additional error
+while an unexpected bill costs less than 0.47 of a member turned away, once the
+service is fully degraded; that crossover is set by the coverage base rate
+rather than by anything about the service. A 250 ms cache TTL buys a 28.7 percent hit rate for no additional error
 at all, while a 30 second TTL gets 78 percent of the changed-coverage decisions
 wrong. And check-then-insert removes 99.5 percent of duplicate decisions without
 removing all of them, which is the worst kind of guarantee: it survives every
@@ -61,8 +63,8 @@ the webhook is a shape, not an implementation of anybody's API.
 | deliveries that are a processor retry | 1,008 |
 | share that should be approved | 32.2 percent |
 
-Traffic is concentrated on a minority of merchants: the busiest 10
-percent take 68.8 percent of the volume. Real card traffic is heavily skewed,
+Traffic is concentrated on a minority of merchants: the busiest 10 percent of
+the 1,772 merchants that got traffic take 68.8 percent of the volume. Real card traffic is heavily skewed,
 and uniform merchant selection would have made the cache experiment a flat line
 by construction, since 20,000 events over 2,000 merchants is ten touches each.
 
@@ -76,7 +78,10 @@ holding only the final state would score a correct service as wrong.
 Two arrangements of the same 50 ms budget:
 
 - **budget covers the queue**. The deadline starts when the request arrives, and
-  time spent waiting for a database connection comes out of it.
+  time spent waiting for a database connection comes out of it. This
+  experiment does not write decisions; where the service does (experiment 4),
+  the idempotency pre-check and the write wait for a connection outside this
+  budget.
 - **statement timeout only**. Wait as long as it takes for a connection, then
   give the query the full 50 ms. This is what a statement timeout alone buys,
   and it is what most services actually have.
@@ -93,7 +98,7 @@ meaningful above it.
 
 | p50 | p95 | p99 | max | throughput |
 | --- | --- | --- | --- | --- |
-| 5,573 us | 16,019 us | 22,435 us | 33,955 us | 9,407 rps |
+| 5,573 us | 16,019 us | 22,435 us | 33,955 us | 9,408 rps |
 
 ### What each arrangement does as the datastore slows
 
@@ -137,7 +142,7 @@ hit the budget waiting for a connection. Bounding the tail is not free, and at
 datastore while the naive one answers 100 percent: slowly.
 
 Shedding load sustains more throughput than queueing it. At 200 ms delay the
-sound arrangement serves 1,203 rps and the naive one 303. Giving up early
+sound arrangement serves 1,204 rps and the naive one 303. Giving up early
 returns connections to the pool instead of holding them for callers who have
 already given up.
 
@@ -287,7 +292,7 @@ measurement. The same 12,000 events, answered without touching the datastore:
 
 | Kill switch answers | p50 | Throughput | Decisions changed | Accuracy |
 | --- | --- | --- | --- | --- |
-| deny everything | 1 us | 7,410 rps | 3,794 (31.62%) | 0.6821 |
+| deny everything | 1 us | 7,411 rps | 3,794 (31.62%) | 0.6821 |
 | approve everything | 1 us | 7,009 rps | 8,206 (68.38%) | 0.3179 |
 
 It answers in a microsecond and it changes a third or two thirds of the
@@ -351,12 +356,14 @@ datastore and others fell back, so the same event genuinely got different
 answers at different instants.
 
 One part of the prediction was wrong in the other direction and is kept. Its
-duplicates were expected to disagree too; they do not, and the reason is
-structural rather than lucky. The deliveries that slip past the check are the
-ones racing in the same instant, before any row exists, so they are all doing
-identical work against an identically slow datastore and all reach the same
-answer. Contradictory pairs need deliveries spread across the burst, which is
-what the unguarded run has and the guarded one does not.
+duplicates were expected to disagree too; they do not, and why is not
+established. The deliveries that slip past the check race in the same instant
+and do identical work, which would make them agree. But the guarded run also
+fell back on only 1 of its 163 decisions, which is consistent with the
+check-then-insert pre-check waiting for a connection outside the latency
+budget (the budget covers the coverage query and its queue, not the pre-check
+or the write), so it had almost no fallbacks to disagree with. Contradictory pairs need some deliveries
+to fall back and others not, which is what the unguarded run has.
 
 Returning the original decision is the requirement, not refusing the replay. A
 guard that raised on the second delivery would not be idempotent, it would be
@@ -375,8 +382,15 @@ python3 scripts/exp3_cache_and_kill_switch.py
 python3 scripts/exp4_idempotency.py
 ```
 
-About fifteen minutes end to end, most of it in the deliberately slowed sweep
+About fifteen minutes through the whole pipeline, most of it in the deliberately slowed sweep
 points. `SAMPLE_RUN.md` is the captured output of exactly that sequence.
+
+Both images are pinned by tag, not by digest: `python:3.13-slim-bookworm` for
+the service and `postgres:17.6-bookworm` for the datastore. The digests those
+tags resolved to for the shipped results were not recorded, so no digest is
+given; one taken later would name an image the results were not measured on.
+A rebuild can pull a newer image under the same tag, and its latencies can
+differ from the ones reported here.
 
 Two of those steps refuse rather than measure something else. `load.py`
 recomputes the generator's manifest and compares it against the
@@ -435,7 +449,11 @@ The load-bearing rows are mutation-checked and say so.
 | A driver-side failure is not scored as a wrong decision | `tests/test_generator_and_scoring.py::test_a_failed_request_is_not_scored_as_a_wrong_decision` |
 | A percentile is a value that actually occurred | `tests/test_generator_and_scoring.py::test_the_percentile_is_a_value_that_actually_occurred` |
 | The no-op floor is far cheaper than a real decision (mutation-checked: re-enable Nagle and the floor becomes 42 ms) | `tests/test_results_invariants.py::test_the_noop_floor_is_far_cheaper_than_a_real_decision` |
-| Nothing falls back when the datastore is not slowed | `tests/test_results_invariants.py::test_nothing_falls_back_when_the_datastore_is_not_slowed` |
+| Almost every decision is a real answer when the datastore is not slowed (some still fall back under load) | `tests/test_results_invariants.py::test_almost_every_decision_is_a_real_answer_when_the_datastore_is_not_slowed` |
+| The experiment scripts' arithmetic is what they publish: the timeout verdict's bound, the control gap, staleness scored only on changed coverage, and the duplicate removal share | `tests/test_experiment_arithmetic.py::test_the_timeout_verdict_bound_is_the_budget_plus_the_floor`, `::test_the_control_gap_is_the_difference_of_the_two_error_totals`, `::test_staleness_is_scored_only_on_events_whose_coverage_changed`, `::test_the_removal_share_compares_the_guarded_and_unguarded_burst` |
+| Every port compose publishes is bound to loopback | `tests/test_experiment_arithmetic.py::test_every_published_port_is_bound_to_loopback` |
+| An unknown fallback or guard is refused at `/config` | `tests/test_experiment_arithmetic.py::test_config_refuses_an_unknown_fallback_or_guard` |
+| The pool replaces a connection the server dropped, answers from the row its query returns, and enforces a zero budget instead of disabling the timeout | `tests/test_pool.py::test_a_connection_the_server_dropped_is_replaced_when_it_is_returned`, `::test_the_coverage_answer_is_the_row_the_query_returned`, `::test_a_zero_budget_is_enforced_rather_than_disabling_the_timeout` |
 | Everything falls back once the delay exceeds the budget | `tests/test_results_invariants.py::test_everything_falls_back_once_the_delay_exceeds_the_budget` |
 | A budget that covers the queue bounds the tail far better | `tests/test_results_invariants.py::test_a_budget_that_covers_the_queue_bounds_the_tail_far_better` |
 | The experiment ran above pool saturation | `tests/test_results_invariants.py::test_the_experiment_ran_above_pool_saturation` |
@@ -475,7 +493,7 @@ The load-bearing rows are mutation-checked and say so.
 | The HTTP handler routes and answers over a real socket, with the database stubbed out: health, config, stats, 404 and authorize | `tests/test_http_handler.py::test_healthz_answers_without_touching_anything`, `::test_get_config_returns_the_live_configuration`, `::test_stats_reports_the_pool_the_process_built`, `::test_an_unknown_path_is_a_404`, `::test_authorize_hands_the_request_body_to_decide` (mutation-checked: make `do_GET` return nothing, or `/authorize` skip `decide`, and they fail) |
 | A fault inside the handler is a 500 with its type, counted apart from a timeout | `tests/test_http_handler.py::test_a_fault_in_the_handler_is_a_500_and_is_counted` (mutation-checked: stop counting it and it fails) |
 
-## What this does not measure
+## Limits
 
 - **NOT A p99 THAT GENERALIZES.** One machine, loopback, no network, a Python
   service and a datastore one hop away. A floor is published so a reader can
@@ -518,7 +536,7 @@ a crossover for the same reason section 2 there does. The two are independent
 and share no code; that one needs a single Postgres container and this one needs
 Postgres plus the service.
 
-Both follow the same rules: no claim without a test, mutation checks on the
+Both follow the same rules: every claim has a test, mutation checks on the
 tests that matter, every number re-derived from the shipped results by script,
 and predictions recorded before the run so the refuted ones survive. Three of
 the six predictions here were refuted and all three are still in the code.

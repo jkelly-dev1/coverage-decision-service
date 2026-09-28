@@ -50,7 +50,7 @@ TIMEOUT_MS = 50
 REQUESTS = 3000
 CONCURRENCY = 64
 
-# The pool holds 16 connections. Concurrency of 64 is deliberately above it:
+# The pool holds 16 connections. Concurrency of 64 is above it:
 # the two arrangements produce identical numbers until requests have to wait
 # for a connection, so an experiment run below saturation would report that
 # the distinction does not matter.
@@ -142,13 +142,13 @@ def verdict(rows, floor_p99_us):
     reference rather than a law. The 99th percentile of a sum is not the sum
     of the 99th percentiles: a request that is unlucky in the scheduler and
     unlucky in the queue lands beyond both, so a correct implementation can
-    exceed this and does. What means something is HOW FAR each arrangement
+    exceed this. What means something is HOW FAR each arrangement
     exceeds it, and the two differ by an order of magnitude.
 
-    An absolute verdict is deliberately not the headline. It sits close to
-    the boundary for the sound arrangement and moves between runs, so a
-    repository that led with it would be publishing a coin flip. The ratio
-    between the two arrangements does not move.
+    An absolute verdict is not the headline. It sits close to the boundary for
+    the sound arrangement and moves between runs, so a repository that led with
+    it would be publishing a coin flip. The ratio between the two arrangements
+    does not move.
     """
     bound_us = TIMEOUT_MS * 1000 + floor_p99_us
     worst = max(r["p99_us"] for r in rows)
@@ -231,8 +231,9 @@ def main():
             with_a_statement_timeout_alone=dict(
                 v_naive,
                 verdict="held" if v_naive["within_bound"] else "REFUTED"),
-            # Both exceed the reference bound, and the prediction is refuted
-            # for both. The finding is the distance, not the verdict.
+            # The sound arrangement stays inside the reference bound in the
+            # shipped run and the naive one exceeds it; the finding is the
+            # distance between them, not either verdict.
             verdict=("REFUTED"
                      if not (v_covered["within_bound"]
                              and v_naive["within_bound"]) else "held"),

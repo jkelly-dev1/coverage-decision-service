@@ -1,7 +1,14 @@
-"""Re-derive every published figure from results/*.json and require it verbatim
-in README.md.
+"""Re-derive the published figures from results/*.json and the generator, and
+require them verbatim in README.md.
 
     python3 scripts/check_readme_numbers.py
+    python3 scripts/check_readme_numbers.py --emit    print what it derives
+
+Not derived: the figures in the claims table's "(mutation-checked: ...)"
+notes, which describe an edit and what it produced (the no-op floor's 42
+ms); the HTTP status codes 404 and 500; the minimum Python version, 3.11;
+and the service's fixed constants quoted in prose. Every other number in
+README.md is a row --emit prints.
 
 Why this exists. A number in a document has no owner. The results files are
 rewritten by every run; the prose is rewritten by hand, sometimes, when
@@ -12,7 +19,7 @@ not look like a figure to a reader or to whoever writes a deriver, so it is
 the one most likely to go stale.
 
 It prints how many figures it checked whether or not any are missing, so a
-version of this file that has quietly stopped deriving half of them is visible
+version of this file that has silently stopped deriving half of them is visible
 rather than clean.
 
 What it does not do. It compares the README against the COMMITTED evidence, not
@@ -33,7 +40,9 @@ README = os.path.join(lab.REPO, "README.md")
 
 
 def n(x):
-    return "{:,}".format(int(x))
+    # Rounded, not truncated: the scripts print throughput with %.0f, which
+    # rounds, and the README has to agree with what they print.
+    return "{:,}".format(int(round(x)))
 
 
 def f(x, places):
@@ -42,6 +51,14 @@ def f(x, places):
 
 def pct(x, places=2):
     return "%.*f" % (places, float(x) * 100.0)
+
+
+def nai_share_25(e1):
+    """The statement-timeout-only arm's share answered from the datastore
+    at 25 ms, the figure section 1 sets against the sound arrangement's."""
+    (row,) = [r for r in e1["statement_timeout_only"]
+              if r["inject_db_delay_ms"] == 25]
+    return row["share_answered_from_the_datastore"]
 
 
 def build():
@@ -80,10 +97,18 @@ def build():
         "The worst p99 is %s us when the budget covers the queue and %s us when"
         % (n(p["with_budget_covering_the_queue"]["worst_p99_us"]),
            n(p["with_a_statement_timeout_alone"]["worst_p99_us"])))
-    add("tail ratio in section 1", "a tail %s times longer"
-        % f(e1["tail_ratio_naive_over_covered"], 1))
-    add("tail ratio in the summary", "tail %s times longer"
-        % f(e1["tail_ratio_naive_over_covered"], 1))
+    # Each row anchored to its own sentence. "a tail 10.8 times longer" is a
+    # substring of BOTH copies, so one intact copy used to satisfy both rows.
+    add("tail ratio in section 1", "the same configured timeout, a tail %s "
+        "times longer" % f(e1["tail_ratio_naive_over_covered"], 1))
+    add("tail ratio in the summary", "The same %d ms timeout produces a tail "
+        "%s times longer" % (e1["timeout_ms"],
+                             f(e1["tail_ratio_naive_over_covered"], 1)))
+    add("timeout respected", "respected %d ms in both runs" % e1["timeout_ms"])
+    add("timeout in the arm list", "give the query the full %d ms"
+        % e1["timeout_ms"])
+    add("naive answers at 25 ms", "while the naive one answers %s percent"
+        % f(100 * nai_share_25(e1), 0))
     add("reference bound", "(%s us), the sound arrangement lands at %s of it "
         "and the naive one at %s"
         % (n(p["with_budget_covering_the_queue"]["bound_us"]),
@@ -98,6 +123,20 @@ def build():
 
     # ---- the world ---------------------------------------------------------
     add("events affected", "the %d decisions whose" % e3["events_affected_by_a_change"])
+    add("changes held back in exp1 and exp2", "applying the %d changes as they "
+        "fall due" % e3["coverage_changes"])
+    add("exp1/exp2 event count", "the first %s events have a key"
+        % n(e2["requests"]))
+    add("exp3 replay length", "(The experiment replays the first %s"
+        % n(e3["requests"]))
+    add("exp3 denominator", "it is not %s. Only the %d decisions whose"
+        % (n(e3["requests"]), e3["events_affected_by_a_change"]))
+    add("exp3 table header", "| Wrong among the %d affected |"
+        % e3["events_affected_by_a_change"])
+    add("exp3 no-datastore run", "The same %s events, answered without "
+        "touching the datastore" % n(e3["requests"]))
+    add("exp3 delay in Limits", "**THE %d ms datastore delay in section 3"
+        % e3["injected_db_delay_ms"])
     # Derive from what was applied, not from the world total. The world holds
     # 194 changes; the replayed window applies 130, and every ttl_sweep row
     # records that. Deriving the sentence from the total certified a claim the
@@ -191,11 +230,11 @@ def build():
             % (step_label[key], st["hit_rate_gained"],
                st["affected_error_added"],
                "n/a" if per is None else f(per, 4)))
-    # The multiple between the cheapest and dearest step is deliberately not
-    # derived. It is a ratio against a denominator near zero, it moved by a
-    # factor of two between two runs of the same experiment, and publishing it
-    # would be publishing noise. The dearest step's own value is stable and is
-    # what the README quotes.
+    # The multiple between the cheapest and dearest step is not derived. It is
+    # a ratio against a denominator near zero, it moved by a factor of two
+    # between two runs of the same experiment, and publishing it would be
+    # publishing noise. The dearest step's own value is stable and is what the
+    # README quotes.
     steps = [s for s in e3["marginal_steps"]
              if s["error_added_per_point_of_hit_rate"]
              and s["hit_rate_gained"] > 0.01]
@@ -251,6 +290,93 @@ def build():
         % (n(none_b["events_with_disagreeing_decisions"]),
            n(none_b["distinct_events_delivered"])))
 
+    # ---- the summary, the world, and prose the tables above do not hold ----
+    add("free ttl in the summary", "%d ms cache TTL buys a %s percent hit rate"
+        % (e3["largest_free_ttl_ms"],
+           pct(e3["hit_rate_at_the_largest_free_ttl"], 1)))
+    longest = [r for r in e3["ttl_sweep"]
+               if r["cache_ttl_ms"] == e3["hit_rate_saturates_at_ttl_ms"]][0]
+    add("longest ttl in the summary",
+        "a %d second TTL gets %d percent of the changed-coverage decisions"
+        % (longest["cache_ttl_ms"] // 1000,
+           round(100 * longest["affected_error_rate"])))
+    applied = longest["changes_applied"]
+
+    import generate_traffic as gen
+    mem, mer, status, stream, distinct = gen.build()
+    man = gen.manifest(mem, mer, status, stream, distinct)
+    add("world in section 0", "since %s events over %s merchants is %s touches "
+        "each" % (n(gen.N_EVENTS), n(gen.N_MERCHANTS),
+                  lab.NUMBER_WORDS[gen.N_EVENTS // gen.N_MERCHANTS]))
+    if man["sha256"] != e1["input_manifest_sha256"]:
+        raise SystemExit("the generator no longer produces the world the "
+                         "results were measured on, so the world table cannot "
+                         "be derived from it")
+    add("world members", "| members, on three plans | %s |" % n(man["members"]))
+    add("world merchants", "| merchants | %s, of which %s are health providers |"
+        % (n(man["merchants"]), n(man["provider_merchants"])))
+    add("world rows", "| coverage rows at the start | %s |"
+        % n(man["network_status_rows"] - man["status_changes_during_the_run"]))
+    add("world changes", "| coverage changes during the run | %s |"
+        % n(man["status_changes_during_the_run"]))
+    add("world arrivals", "| authorization deliveries | %s |" % n(man["arrivals"]))
+    add("world distinct", "| distinct events among them | %s |"
+        % n(man["distinct_events"]))
+    add("world replays", "| deliveries that are a processor retry | %s |"
+        % n(man["replay_arrivals"]))
+    add("world approved", "| share that should be approved | %s percent |"
+        % pct(man["base_approval_rate"], 1))
+    add("world skew", "the busiest 10 percent of the %s merchants that got "
+        "traffic take %s percent of the volume"
+        % (n(man["merchants_touched"]),
+           pct(man["share_of_traffic_on_the_top_10_percent_of_merchants"], 1)))
+
+    events = {e["event_id"]: e for e in distinct}
+    window = [a for a in stream if not a["is_replay"]][:e3["requests"]]
+    end_ms = max(events[a["event_id"]]["offered_at_ms"] for a in window)
+    due = sum(1 for r in status if 0 < r["effective_from"] <= end_ms)
+    add("exp3 window", "ending at %s ms of a %s ms timeline; %d changes are "
+        "due by then and the 40-chunk application schedule applies %d"
+        % (n(end_ms), n(man["run_ms"]), due, applied))
+    add("exp3 applied in prose", "%d coverage changes and %d of them fall inside"
+        % (man["status_changes_during_the_run"], applied))
+
+    runs = {(r["inject_db_delay_ms"], r["fallback"]): r for r in e2["runs"]}
+    fb = [sum(v for k, v in runs[(0, pol)]["by_source"].items()
+              if k.startswith("fallback")) for pol in ("closed", "open")]
+    add("control fallbacks", "fires on %d and %d of the %s requests (%s%% and "
+        "%s%%)" % (fb[0], fb[1], n(e2["requests"]),
+                   f(100.0 * fb[0] / e2["requests"], 1),
+                   f(100.0 * fb[1] / e2["requests"], 1)))
+    totals = [runs[(0, pol)]["wrongly_denied"] + runs[(0, pol)]["wrongly_approved"]
+              for pol in ("closed", "open")]
+    add("disagreement bounds", "at least %d and at most %d"
+        % (abs(totals[0] - totals[1]), totals[0] + totals[1]))
+    crossings = []
+    for d in sorted({k[0] for k in runs}):
+        c, o = runs[(d, "closed")], runs[(d, "open")]
+        crossings.append((d, (c["wrongly_denied"] - o["wrongly_denied"])
+                          / float(o["wrongly_approved"] - c["wrongly_approved"])))
+    add("crossover per delay", "it is %s at %d ms, %s at %d ms, %s at %d ms"
+        % (f(crossings[0][1], 4), crossings[0][0], f(crossings[1][1], 4),
+           crossings[1][0], f(crossings[2][1], 4), crossings[2][0]))
+    # "at both 60 ms and 200 ms" is a claim that the last two are equal.
+    if f(crossings[3][1], 4) != f(crossings[4][1], 4):
+        raise ValueError("the crossover no longer settles: %r" % crossings[3:])
+    add("crossover settled", "and %s at both %d ms and %d ms"
+        % (f(crossings[3][1], 4), crossings[3][0], crossings[4][0]))
+    at_half = {r["inject_db_delay_ms"]: r["winner"] for r in e2["priced"]
+               if r["price_of_a_bill_in_turnaways"] == 0.5}
+    add("price 0.50 winners", "At a price of 0.50 the winner is %s at 0 ms and "
+        "%s at 25 ms" % (at_half[0], at_half[25]))
+    add("guard failure rate", "fails %s percent of the time"
+        % f(100 * (1 - e4["duplicates_removed_by_check_then_insert_under_burst"]), 1))
+    cti_sources = cti_b["by_source"]
+    add("exp4 cti fallbacks", "fell back on only %d of its %d decisions"
+        % (cti_sources.get("fallback_closed", 0) + cti_sources.get("fallback_open", 0),
+           cti_sources.get("db", 0) + cti_sources.get("fallback_closed", 0)
+           + cti_sources.get("fallback_open", 0)))
+
     # ---- how many predictions were refuted ---------------------------------
     # Derived, because it is the figure a reader is least likely to check and
     # the one this repository's argument rests on: refuted predictions are
@@ -275,6 +401,10 @@ def n_or_f(v):
 
 
 def main():
+    if "--emit" in sys.argv:
+        for label, text in build():
+            print("%s\n%s" % (label, text))
+        return 0
     with open(README, encoding="utf-8") as fh:
         readme = fh.read()
     try:

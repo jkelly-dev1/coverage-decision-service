@@ -185,7 +185,7 @@ def test_stats_reports_the_pool_the_process_actually_built():
     """The pool size comes from CDS_POOL_SIZE at startup and is not a config
     field, so /config cannot answer it and lab.configure's read-back never
     saw it. Experiment 1 refuses to run without this field, and a field no
-    test can see is one that can quietly stop being reported.
+    test can see is one that can silently stop being reported.
     """
     from service.decide import stats_payload
     out = stats_payload({"db_hit": 3}, 12, 16)

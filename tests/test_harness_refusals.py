@@ -127,7 +127,7 @@ def test_the_checker_is_green_on_the_shipped_tree():
 # ---------------------------------------------------------------------------
 #
 # Both checks above are pure functions, which is what makes them testable at
-# all, and is also how a gate quietly stops gating. `pool_size_complaint`
+# all, and is also how a gate silently stops gating. `pool_size_complaint`
 # would still return the right sentence for every input after its one call
 # site was deleted, and every test above it would stay green. So the call
 # sites are asserted too, structurally, against the parsed source.

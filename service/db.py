@@ -7,10 +7,17 @@ behind a library would make that unanswerable; here it is forty lines and the
 accounting is visible.
 
 Both arrangements are implemented, selected by `budget_covers_queue`. With it
-on, the deadline starts when the request arrives and the queue is spent out of
-the same budget: a caller told 50 ms gets an answer in 50 ms. With it off, the
+on, the deadline covers the wait for a connection and the coverage query
+together: the coverage lookup answers inside the budget. With it off, the
 request waits as long as it takes for a connection and THEN gives the query
 the full timeout, which is what a statement timeout alone actually buys.
+
+What the budget does NOT cover. `prior_decision` (the check half of
+check-then-insert) and `record` (the decision write) take a connection with no
+deadline. Experiment 1 runs with record off, so its figures are the budget as
+described. Experiment 4 runs with record on, and there a request can wait for
+the pre-check's connection before its budget starts; README.md says so where
+it reports that experiment.
 
 Neither is a straw man and the difference is invisible until the Pool
 saturates. Below saturation the two produce the same numbers, so this is a
@@ -32,7 +39,7 @@ class Pool:
         self.settings = settings
         self._free = queue.LifoQueue()
         # A LIFO queue, not FIFO. Reusing the most recently returned
-        # connection keeps a small number of them warm rather than cycling
+        # connection keeps a small number of them warm instead of cycling
         # every connection through every request, which matters because a
         # connection carries the session state this file caches on it.
         self._timeout_state = {}
@@ -77,6 +84,18 @@ class Pool:
             raise TimeoutError("no connection within the budget")
 
     def _release(self, conn):
+        # A connection the server dropped would otherwise go back into the
+        # pool and fail every request that drew it after this one. Replace
+        # it; if the database is still unreachable, keep the dead one so the
+        # pool does not shrink, and the next caller sees the same error.
+        if getattr(conn, "closed", False):
+            # Forget the dead connection's cached timeout: the cache is keyed
+            # by id(), and a replacement can be given the same address.
+            self._timeout_state.pop(id(conn), None)
+            try:
+                conn = self._connect()
+            except Exception:                          # noqa: BLE001
+                pass
         self._free.put(conn)
 
     def _set_timeout(self, conn, ms):
@@ -187,7 +206,9 @@ class Pool:
                 if remaining_ms <= 0:
                     raise TimeoutError("budget spent in the queue")
             else:
-                remaining_ms = int(timeout_ms)
+                # statement_timeout = 0 means NO timeout, so a zero budget
+                # is enforced as the smallest one Postgres accepts.
+                remaining_ms = max(1, int(timeout_ms))
             self._set_timeout(conn, remaining_ms)
             with conn.cursor() as cur:
                 cur.execute(self.COVERAGE_SQL,
@@ -210,7 +231,7 @@ class Pool:
     def prior_decision(self, run_id, guard, event_id):
         """The decision already recorded for this event, or None.
 
-        The check half of check-then-insert, and it is deliberately a separate
+        The check half of check-then-insert, and it is a separate
         statement from the insert. That gap is the entire subject of
         experiment 4: two deliveries of the same event can both pass this
         check before either of them writes.
@@ -247,7 +268,7 @@ class Pool:
                latency_us):
         """Write the decision. Returns (inserted, the decision that stands).
 
-        The unique variant returns the original decision rather than raising.
+        The unique variant returns the original decision instead of raising.
         A guard that refuses the second delivery has not made the endpoint
         idempotent, it has made it fragile: the processor retries because it
         did not hear back, and answering the retry with an error guarantees it

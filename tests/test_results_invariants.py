@@ -34,7 +34,7 @@ def test_the_floor_is_published_at_all(exp1):
         assert exp1["noop_floor"][key] is not None
 
 
-def test_nothing_falls_back_when_the_datastore_is_not_slowed(exp1):
+def test_almost_every_decision_is_a_real_answer_when_the_datastore_is_not_slowed(exp1):
     # The control. At zero injected delay the datastore answers well inside
     # the budget, so almost every decision should be a real one.
     zero = [r for r in exp1["budget_covers_queue"]
@@ -57,9 +57,9 @@ def test_the_share_of_real_answers_never_rises_as_the_datastore_slows(exp1):
 
 
 def test_a_budget_that_covers_the_queue_bounds_the_tail_far_better(exp1):
-    # The headline, and it is a ratio on purpose. The absolute verdict sits
-    # near the boundary and moves between runs; the ratio between the two
-    # arrangements does not.
+    # The headline, and it is a ratio. The absolute verdict sits near the
+    # boundary and moves between runs; the ratio between the two arrangements
+    # does not.
     assert exp1["tail_ratio_naive_over_covered"] > 4.0
 
 
@@ -165,7 +165,7 @@ def test_the_measured_crossover_matches_the_analytic_one(exp2):
 
 
 def test_the_crossover_is_a_function_of_the_base_rate_alone(exp2):
-    # The tolerance is absolute and loose on purpose. Both figures are stored
+    # The tolerance is absolute and loose. Both figures are stored
     # rounded to six places, so reconstructing either from the other cannot
     # agree beyond that; a tighter tolerance would be testing the rounding.
     base = exp2["base_coverage_rate"]
@@ -220,7 +220,7 @@ def test_the_cache_is_off_at_a_ttl_of_zero(exp3):
 
 
 def test_nothing_fell_back_during_the_cache_experiment(exp3):
-    # The timeout is deliberately generous here. A run where requests were
+    # The timeout is generous here. A run where requests were
     # also falling back would confound the cache with the budget.
     for row in exp3["ttl_sweep"]:
         assert row["fell_back"] == 0
@@ -376,7 +376,7 @@ def test_every_scored_prediction_is_enumerated_with_its_verdict(
     assert len(labels) == len(set(labels)), "a prediction is enumerated twice"
     for label, verdict in got:
         assert verdict in ("held", "REFUTED"), (label, verdict)
-    # Refuted predictions are kept rather than quietly dropped, which is only
+    # Refuted predictions are kept rather than silently dropped, which is only
     # a claim worth making if some were refuted.
     assert any(v == "REFUTED" for _, v in got)
     assert any(v == "held" for _, v in got)

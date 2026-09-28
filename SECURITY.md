@@ -35,9 +35,16 @@ The service itself is not hardened and is not meant to be. It has no
 authentication, and `POST /config` lets any caller change the latency budget,
 the fallback policy and the kill switch at runtime. That is what makes the
 experiments possible without rebuilding an image between sweep points, and it is
-exactly what a real decision service must not do. It listens on loopback only.
+exactly what a real decision service must not do. Compose publishes it on
+loopback only (`127.0.0.1:18080`); the process inside the container listens on
+every interface, and tests/test_experiment_arithmetic.py checks the bindings.
 Treat the whole of `service/` as a subject for measurement rather than as a
 starting point.
+
+The two container images are pinned by tag, not by digest, so a rebuild can
+pull a different image under the same tag, including one with different
+security patches. The README's "Reproducing it" section says why no digest is
+given.
 
 There is no corpus and no downloaded data. Every member, merchant, plan and
 authorization is generated from a fixed seed by
